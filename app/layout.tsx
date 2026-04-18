@@ -15,6 +15,7 @@ const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   display: 'swap',
+  preload: false,
 });
 
 const jetbrains = JetBrains_Mono({
@@ -22,6 +23,7 @@ const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],
   display: 'swap',
+  preload: false,
 });
 
 export const metadata: Metadata = {
