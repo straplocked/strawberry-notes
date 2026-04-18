@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: strawberry-notes:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://strawberry:${POSTGRES_PASSWORD:-strawberry}@postgres:5432/strawberry
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3200}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+    ports:
+      # Host port 3200 chosen to avoid collisions with other local containers
+      # (3000 / 3100 were already in use). Override via APP_PORT in .env.
+      - "${APP_PORT:-3200}:3000"
+    volumes:
+      - uploads:/data
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: strawberry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strawberry}
+      POSTGRES_DB: strawberry
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U strawberry -d strawberry"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  uploads:
