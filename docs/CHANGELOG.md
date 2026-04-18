@@ -5,6 +5,31 @@
 
 ---
 
+## Run 2 — 2026-04-18
+
+**Summary:** Added pure-unit test coverage for five previously untested modules and
+refreshed `technical/testing.md` so the coverage table and gap list match reality.
+No production code changed.
+
+**Tests added (49 new cases, suite is now 57 / 7 files):**
+
+- `lib/format.test.ts` — `formatDate` day-relative rules + calendar-diff midnight edge case.
+- `lib/storage.test.ts` — MIME allowlist, `extForMime`, `maxUploadBytes` env + 1 MiB floor, `uploadsDir` override.
+- `lib/design/accents.test.ts` — accent list invariants, `accentById` fallback, `DEFAULT_SETTINGS`.
+- `lib/api/client.test.ts` — REST URL / method / body shape, `notes.list` filter omission, non-ok error formatting.
+- `lib/store/ui-store.test.ts` — Zustand defaults, view/search reset, settings persistence, theme-aware CSS vars, `hydrateSettingsFromStorage` (empty / garbage / partial).
+
+**Files modified:**
+
+- `docs/technical/testing.md` — expanded coverage table, tightened gap list (upload helpers now covered at the pure-function layer).
+
+**Notes:**
+
+- All new tests are pure (no DB, no Next.js server runtime). `fetch` is stubbed for the API client suite; jsdom provides `localStorage` + `document` for the store suite.
+- No doc files were split — `testing.md` is still well below the 250-line threshold.
+
+---
+
 ## Run 1 — 2026-04-18
 
 **Summary:** Initial creation of the documentation tree. Scanned the codebase end-to-end
