@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import type { Editor as TiptapEditor } from '@tiptap/react';
 import { Sidebar } from './Sidebar';
 import { NoteList } from './NoteList';
 import { Editor } from './Editor';
@@ -80,14 +81,21 @@ export function AppShell() {
     .map((id) => tags.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => !!t);
 
-  // Debounced autosave for title + content edits.
-  const pendingRef = useRef<{ title?: string; content?: PMDoc }>({});
+  // Debounced autosave. Content is pulled from the live editor at save time,
+  // so we don't serialize the doc on every keystroke.
+  const pendingRef = useRef<{ title?: string; contentDirty?: boolean }>({});
   const timerRef = useRef<number | null>(null);
+  const editorRef = useRef<TiptapEditor | null>(null);
   const scheduleSave = (id: string) => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => {
-      const patch = pendingRef.current;
+      const pending = pendingRef.current;
       pendingRef.current = {};
+      const patch: { title?: string; content?: PMDoc } = {};
+      if (pending.title !== undefined) patch.title = pending.title;
+      if (pending.contentDirty && editorRef.current) {
+        patch.content = editorRef.current.getJSON() as PMDoc;
+      }
       if (Object.keys(patch).length > 0) {
         patchNote.mutate({ id, patch });
       }
@@ -158,14 +166,15 @@ export function AppShell() {
         note={activeNote}
         folder={activeNoteFolder}
         tags={activeNoteTags}
+        editorRef={editorRef}
         onChangeTitle={(title) => {
           if (!activeNoteId) return;
           pendingRef.current.title = title;
           scheduleSave(activeNoteId);
         }}
-        onChangeContent={(doc) => {
+        onDirty={() => {
           if (!activeNoteId) return;
-          pendingRef.current.content = doc;
+          pendingRef.current.contentDirty = true;
           scheduleSave(activeNoteId);
         }}
         onTogglePin={() => {

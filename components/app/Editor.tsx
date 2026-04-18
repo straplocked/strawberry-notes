@@ -6,7 +6,7 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { Image as ImageExt } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { useEffect, useRef, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties, type MutableRefObject } from 'react';
 import {
   IconAttach,
   IconBold,
@@ -29,7 +29,7 @@ import {
 } from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { countTasks } from '@/lib/editor/prosemirror-utils';
-import type { FolderDTO, NoteDTO, PMDoc, TagDTO } from '@/lib/types';
+import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
 
 import styles from './editor.module.css';
 
@@ -124,8 +124,9 @@ export interface EditorProps {
   folder: FolderDTO | null;
   tags: TagDTO[];
   onChangeTitle: (t: string) => void;
-  onChangeContent: (doc: PMDoc, text: string) => void;
+  onDirty: () => void;
   onTogglePin: () => void;
+  editorRef?: MutableRefObject<TiptapEditor | null>;
   readOnly?: boolean;
 }
 
@@ -134,11 +135,23 @@ export function Editor({
   folder,
   tags,
   onChangeTitle,
-  onChangeContent,
+  onDirty,
   onTogglePin,
+  editorRef,
   readOnly = false,
 }: EditorProps) {
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  const onDirtyRef = useRef(onDirty);
+  onDirtyRef.current = onDirty;
+  const onChangeTitleRef = useRef(onChangeTitle);
+  onChangeTitleRef.current = onChangeTitle;
+
+  const resizeTitle = () => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
 
   const editor = useEditor(
     {
@@ -154,23 +167,25 @@ export function Editor({
       editorProps: {
         attributes: { class: styles.pm, 'data-testid': 'pm-editor' },
       },
-      onUpdate({ editor }) {
-        const doc = editor.getJSON() as PMDoc;
-        const text = editor.getText();
-        onChangeContent(doc, text);
+      onUpdate() {
+        onDirtyRef.current();
       },
       immediatelyRender: false,
     },
     [note?.id],
   );
 
-  // Auto-resize the title textarea to fit content.
   useEffect(() => {
-    const el = titleRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [note?.title]);
+    if (editorRef) editorRef.current = editor;
+    return () => {
+      if (editorRef && editorRef.current === editor) editorRef.current = null;
+    };
+  }, [editor, editorRef]);
+
+  // Auto-resize the title textarea whenever the active note changes (mount/switch).
+  useEffect(() => {
+    resizeTitle();
+  }, [note?.id]);
 
   if (!note) {
     return (
@@ -359,12 +374,22 @@ export function Editor({
           </div>
 
           <textarea
+            key={note.id}
             ref={titleRef}
             style={titleStyle}
-            value={note.title}
+            defaultValue={note.title}
             rows={1}
             placeholder="Untitled"
-            onChange={(e) => onChangeTitle(e.target.value)}
+            onInput={(e) => {
+              resizeTitle();
+              onChangeTitleRef.current((e.target as HTMLTextAreaElement).value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                e.preventDefault();
+                editor?.chain().focus('start').run();
+              }
+            }}
           />
 
           <EditorContent editor={editor} />
