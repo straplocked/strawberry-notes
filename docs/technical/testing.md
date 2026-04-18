@@ -16,11 +16,13 @@ Vitest + Testing Library, run via `npm test` (one-shot) or `npm run test:watch`.
 | -------------------------------------------- | ------------------------------------------------------------------------------ |
 | `lib/editor/prosemirror-utils.test.ts`       | `docToPlainText`, `snippetFromDoc`, `countTasks` edge cases.                   |
 | `lib/markdown/markdown.test.ts`              | Round-trip Markdown ↔ ProseMirror JSON for the documented node/mark set.       |
+| `lib/format.test.ts`                         | `formatDate` day-relative rules (today / yesterday / weekday / same-year / prior-year) + midnight-crossing calendar-diff. |
+| `lib/storage.test.ts`                        | Upload MIME allowlist, extension mapping, `maxUploadBytes` env handling with 1 MiB floor, `uploadsDir` env override. |
+| `lib/design/accents.test.ts`                 | Accent list order + shape, `accentById` lookup + fallback, `DEFAULT_SETTINGS`. |
+| `lib/api/client.test.ts`                     | REST client URL + method + body shape; filter-omission in `notes.list`; non-ok response raises a descriptive error. |
+| `lib/store/ui-store.test.ts`                 | Zustand store defaults, `setView` clears search, settings persistence to localStorage, theme-aware `--berry-soft`, `hydrateSettingsFromStorage` with empty / garbage / partial payloads. |
 
-That's it for v1. Coverage is deliberately light and lives where the logic is non-trivial:
-
-- **Editor utilities** — easy to regress, hard to eyeball.
-- **Markdown round-trip** — a regression here silently corrupts imports/exports.
+Guiding rule: cover logic that is easy to regress silently (editor utils, markdown, date formatting, MIME gating, store hydration) and the outward-facing API client shape. Component rendering and DB-bound logic are still out of scope for v1.
 
 ---
 
@@ -31,8 +33,8 @@ No tests exist for:
 - API route handlers (`app/api/**/route.ts`).
 - Auth flow (signup, sign-in, session gating).
 - React components (no component tests yet).
-- Upload endpoint (MIME/size rejection, ownership checks).
-- Folder / tag upsert logic.
+- Upload endpoint end-to-end (MIME/size rejection + ownership checks at the HTTP layer — the pure helpers in `lib/storage.ts` are now covered).
+- Folder / tag upsert logic (`lib/notes/tag-resolution.ts` — needs a real Postgres).
 
 If you're adding coverage, the highest-value targets in priority order:
 

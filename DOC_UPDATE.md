@@ -10,7 +10,7 @@
 
 | Metric       | Value        |
 | ------------ | ------------ |
-| Total runs   | **1**        |
+| Total runs   | **2**        |
 | First run    | 2026-04-18   |
 | Last run     | 2026-04-18   |
 
