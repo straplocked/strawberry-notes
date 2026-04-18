@@ -141,10 +141,16 @@ export function Editor({
   readOnly = false,
 }: EditorProps) {
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
+  // Keep the latest callbacks behind refs so `useEditor` doesn't need to
+  // re-create the TipTap instance on every parent re-render (typing lag).
+  // Sync in an effect — assigning `.current` during render violates the
+  // react-hooks/refs rule under the React compiler.
   const onDirtyRef = useRef(onDirty);
-  onDirtyRef.current = onDirty;
   const onChangeTitleRef = useRef(onChangeTitle);
-  onChangeTitleRef.current = onChangeTitle;
+  useEffect(() => {
+    onDirtyRef.current = onDirty;
+    onChangeTitleRef.current = onChangeTitle;
+  });
 
   const resizeTitle = () => {
     const el = titleRef.current;
