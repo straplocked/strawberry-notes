@@ -30,7 +30,7 @@ wait_for_db() {
 wait_for_db
 
 echo "[strawberry] running migrations"
-node_modules/.bin/drizzle-kit migrate || {
+node node_modules/drizzle-kit/bin.cjs migrate || {
   echo "[strawberry] migration failed"
   exit 1
 }
