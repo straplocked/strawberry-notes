@@ -158,8 +158,9 @@ export function AppShell() {
 
   function onNewNote() {
     const t = dtime('ui', 'click: new note');
-    const folderId =
-      view.kind === 'folder' ? view.id : folders[0]?.id ?? null;
+    // Apple-Notes style: only attach to a folder when the user is viewing one.
+    // All Notes / Pinned / Trash / Tag views create an unfiled note.
+    const folderId = view.kind === 'folder' ? view.id : null;
     createNote.mutate(
       { folderId, title: '' },
       {
