@@ -3,6 +3,7 @@
 import type { CSSProperties } from 'react';
 import { IconPinFill, IconSearch, IconX } from '@/components/icons';
 import { formatDate } from '@/lib/format';
+import { drender } from '@/lib/debug';
 import type { Density } from '@/lib/design/accents';
 import type { NoteListItemDTO, TagDTO } from '@/lib/types';
 
@@ -160,6 +161,12 @@ export function NoteList({
   onSearch,
   density,
 }: NoteListProps) {
+  drender('NoteList', {
+    count: notes.length,
+    activeNoteId,
+    search: search || undefined,
+    folder: activeFolderName,
+  });
   const dense = density === 'dense';
   const tagById = new Map(tags.map((t) => [t.id, t]));
   return (

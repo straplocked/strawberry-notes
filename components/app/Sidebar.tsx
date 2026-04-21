@@ -1,16 +1,18 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import {
   IconAll,
   IconBerry,
+  IconLogout,
   IconMoon,
   IconPin,
   IconPlus,
   IconSun,
   IconTrash,
 } from '@/components/icons';
-import type { Density } from '@/lib/design/accents';
+import { ACCENTS, type Density } from '@/lib/design/accents';
+import { drender } from '@/lib/debug';
 import type { FolderDTO, FolderView, TagDTO } from '@/lib/types';
 
 const styles: Record<string, CSSProperties> = {
@@ -96,6 +98,33 @@ const styles: Record<string, CSSProperties> = {
     boxShadow:
       '0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 3px rgba(0,0,0,0.15)',
   },
+  newFolderRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '7px 10px',
+  },
+  newFolderInput: {
+    flex: 1,
+    background: 'var(--surface)',
+    border: '1px solid var(--hair-2)',
+    borderRadius: 6,
+    color: 'var(--ink)',
+    padding: '4px 8px',
+    fontSize: 13,
+    outline: 'none',
+    fontFamily: 'inherit',
+  },
+  folderDelete: {
+    marginLeft: 'auto',
+    width: 20,
+    height: 20,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 5,
+    color: 'var(--ink-4)',
+    cursor: 'pointer',
+  },
 };
 
 function itemStyle(active: boolean, dense: boolean): CSSProperties {
@@ -143,6 +172,10 @@ function tagChip(active: boolean): CSSProperties {
   };
 }
 
+function randomAccentHex(): string {
+  return ACCENTS[Math.floor(Math.random() * ACCENTS.length)].hex;
+}
+
 export interface SidebarProps {
   folders: FolderDTO[];
   tags: TagDTO[];
@@ -155,15 +188,31 @@ export interface SidebarProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   density: Density;
-  onAddFolder?: () => void;
+  onAddFolder?: (input: { name: string; color: string }) => void;
+  onDeleteFolder?: (folder: FolderDTO) => void;
+  onSignOut?: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
   const { folders, tags, view, onView, density } = props;
+  drender('Sidebar', { folders: folders.length, tags: tags.length, view: view.kind });
   const dense = density === 'dense';
   const isActiveKind = (k: FolderView['kind']) => view.kind === k;
   const isActiveFolder = (id: string) => view.kind === 'folder' && view.id === id;
   const isActiveTag = (id: string) => view.kind === 'tag' && view.id === id;
+
+  const [adding, setAdding] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [hoverFolderId, setHoverFolderId] = useState<string | null>(null);
+
+  const commitDraft = () => {
+    const name = draftName.trim();
+    if (name && props.onAddFolder) {
+      props.onAddFolder({ name, color: randomAccentHex() });
+    }
+    setDraftName('');
+    setAdding(false);
+  };
 
   return (
     <aside style={styles.root}>
@@ -204,29 +253,74 @@ export function Sidebar(props: SidebarProps) {
               <IconPlus
                 size={13}
                 style={{ color: 'var(--ink-4)', cursor: 'pointer' }}
-                onClick={props.onAddFolder}
+                onClick={() => {
+                  setAdding(true);
+                  setDraftName('');
+                }}
               />
             )}
           </div>
-          {folders.map((f) => (
-            <div
-              key={f.id}
-              style={itemStyle(isActiveFolder(f.id), dense)}
-              onClick={() => onView({ kind: 'folder', id: f.id })}
-            >
-              <span style={dotStyle(f.color)} />
-              <span
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+          {adding && (
+            <div style={styles.newFolderRow}>
+              <span style={dotStyle('var(--ink-4)')} />
+              <input
+                autoFocus
+                style={styles.newFolderInput}
+                placeholder="New folder…"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitDraft();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setAdding(false);
+                    setDraftName('');
+                  }
                 }}
-              >
-                {f.name}
-              </span>
-              <span style={countStyle}>{f.count}</span>
+                onBlur={commitDraft}
+              />
             </div>
-          ))}
+          )}
+          {folders.map((f) => {
+            const active = isActiveFolder(f.id);
+            const hovered = hoverFolderId === f.id;
+            return (
+              <div
+                key={f.id}
+                style={itemStyle(active, dense)}
+                onClick={() => onView({ kind: 'folder', id: f.id })}
+                onMouseEnter={() => setHoverFolderId(f.id)}
+                onMouseLeave={() => setHoverFolderId((h) => (h === f.id ? null : h))}
+              >
+                <span style={dotStyle(f.color)} />
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {f.name}
+                </span>
+                {hovered && props.onDeleteFolder ? (
+                  <span
+                    style={styles.folderDelete}
+                    title={`Delete folder "${f.name}"`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      props.onDeleteFolder?.(f);
+                    }}
+                  >
+                    <IconTrash size={13} />
+                  </span>
+                ) : (
+                  <span style={countStyle}>{f.count}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {tags.length > 0 && (
@@ -273,6 +367,16 @@ export function Sidebar(props: SidebarProps) {
         >
           {props.theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
         </button>
+        {props.onSignOut && (
+          <button
+            style={styles.footBtn}
+            onClick={props.onSignOut}
+            title="Sign out"
+            type="button"
+          >
+            <IconLogout size={15} />
+          </button>
+        )}
       </div>
     </aside>
   );

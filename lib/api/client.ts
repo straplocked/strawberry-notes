@@ -1,3 +1,4 @@
+import { dtime } from '../debug';
 import type { FolderDTO, NoteDTO, NoteListItemDTO, PMDoc, TagDTO } from '../types';
 
 async function json<T>(res: Response): Promise<T> {
@@ -8,20 +9,39 @@ async function json<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function req<T>(
+  method: string,
+  url: string,
+  init?: RequestInit,
+  parseJson: boolean = true,
+): Promise<T> {
+  const t = dtime('net', `${method} ${url}`);
+  try {
+    const res = await fetch(url, { method, ...init });
+    const out = parseJson ? await json<T>(res) : (undefined as unknown as T);
+    t.end({ status: res.status });
+    return out;
+  } catch (err) {
+    t.end({ error: (err as Error).message });
+    throw err;
+  }
+}
+
+const jsonHeaders = { 'content-type': 'application/json' } as const;
+
 export const api = {
   folders: {
-    list: () => fetch('/api/folders').then((r) => json<FolderDTO[]>(r)),
+    list: () => req<FolderDTO[]>('GET', '/api/folders'),
     create: (input: { name: string; color?: string }) =>
-      fetch('/api/folders', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      req<FolderDTO>('POST', '/api/folders', {
+        headers: jsonHeaders,
         body: JSON.stringify(input),
-      }).then((r) => json<FolderDTO>(r)),
+      }),
     delete: (id: string) =>
-      fetch(`/api/folders/${id}`, { method: 'DELETE' }).then((r) => json<{ ok: true }>(r)),
+      req<{ ok: true }>('DELETE', `/api/folders/${id}`),
   },
   tags: {
-    list: () => fetch('/api/tags').then((r) => json<TagDTO[]>(r)),
+    list: () => req<TagDTO[]>('GET', '/api/tags'),
   },
   notes: {
     list: (params: { folder?: string; tag?: string; q?: string }) => {
@@ -29,15 +49,14 @@ export const api = {
       if (params.folder) search.set('folder', params.folder);
       if (params.tag) search.set('tag', params.tag);
       if (params.q) search.set('q', params.q);
-      return fetch(`/api/notes?${search.toString()}`).then((r) => json<NoteListItemDTO[]>(r));
+      return req<NoteListItemDTO[]>('GET', `/api/notes?${search.toString()}`);
     },
-    get: (id: string) => fetch(`/api/notes/${id}`).then((r) => json<NoteDTO>(r)),
+    get: (id: string) => req<NoteDTO>('GET', `/api/notes/${id}`),
     create: (input: { folderId?: string | null; title?: string; tagNames?: string[] }) =>
-      fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      req<NoteDTO>('POST', '/api/notes', {
+        headers: jsonHeaders,
         body: JSON.stringify(input),
-      }).then((r) => json<NoteDTO>(r)),
+      }),
     patch: (
       id: string,
       input: {
@@ -49,13 +68,12 @@ export const api = {
         trashed?: boolean;
       },
     ) =>
-      fetch(`/api/notes/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+      req<NoteDTO>('PATCH', `/api/notes/${id}`, {
+        headers: jsonHeaders,
         body: JSON.stringify(input),
-      }).then((r) => json<NoteDTO>(r)),
+      }),
     remove: (id: string) =>
-      fetch(`/api/notes/${id}`, { method: 'DELETE' }).then((r) => json<{ ok: true }>(r)),
+      req<{ ok: true }>('DELETE', `/api/notes/${id}`),
     exportMarkdown: (id: string) => (window.location.href = `/api/notes/${id}/export.md`),
   },
 };

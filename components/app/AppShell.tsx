@@ -10,14 +10,18 @@ import { Editor } from './Editor';
 import { TweaksPanel } from './Tweaks';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
+  useCreateFolder,
   useCreateNote,
+  useDeleteFolder,
+  useDeleteNote,
   useFolders,
   useNote,
   useNotesList,
   usePatchNote,
   useTags,
 } from '@/lib/api/hooks';
-import type { PMDoc } from '@/lib/types';
+import { dlog, drender, dtime } from '@/lib/debug';
+import type { FolderDTO, PMDoc } from '@/lib/types';
 
 export function AppShell() {
   const router = useRouter();
@@ -39,6 +43,18 @@ export function AppShell() {
 
   const createNote = useCreateNote();
   const patchNote = usePatchNote();
+  const deleteNote = useDeleteNote();
+  const createFolder = useCreateFolder();
+  const deleteFolder = useDeleteFolder();
+
+  drender('AppShell', {
+    view: view.kind,
+    activeNoteId,
+    noteLoaded: !!noteQ.data,
+    noteStatus: noteQ.status,
+    listCount: notesListQ.data?.length ?? 0,
+    listStatus: notesListQ.status,
+  });
 
   const folders = useMemo(() => foldersQ.data ?? [], [foldersQ.data]);
   const tags = useMemo(() => tagsQ.data ?? [], [tagsQ.data]);
@@ -46,14 +62,29 @@ export function AppShell() {
 
   // Keep the active note valid as the list changes.
   useEffect(() => {
+    dlog('effect', 'AppShell: list/active reconcile', {
+      listCount: listNotes.length,
+      activeNoteId,
+    });
     if (listNotes.length === 0) {
       if (activeNoteId) setActiveNoteId(null);
       return;
     }
     if (!activeNoteId || !listNotes.some((n) => n.id === activeNoteId)) {
+      dlog('effect', 'AppShell: auto-selecting first note', { id: listNotes[0].id });
       setActiveNoteId(listNotes[0].id);
     }
   }, [listNotes, activeNoteId, setActiveNoteId]);
+
+  // Log note fetch round-trip end to correlate with the click-to-select log.
+  useEffect(() => {
+    if (activeNoteId) dlog('ui', 'activeNoteId ->', { id: activeNoteId });
+  }, [activeNoteId]);
+
+  useEffect(() => {
+    if (noteQ.data) dlog('ui', 'note loaded', { id: noteQ.data.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteQ.data?.id]);
 
   const totalAll = useMemo(() => folders.reduce((sum, f) => sum + f.count, 0), [folders]);
 
@@ -97,7 +128,10 @@ export function AppShell() {
         patch.content = editorRef.current.getJSON() as PMDoc;
       }
       if (Object.keys(patch).length > 0) {
+        dlog('save', 'autosave fire', { id, fields: Object.keys(patch) });
         patchNote.mutate({ id, patch });
+      } else {
+        dlog('save', 'autosave noop', { id });
       }
     }, 700);
   };
@@ -123,6 +157,7 @@ export function AppShell() {
   }, [view]);
 
   function onNewNote() {
+    const t = dtime('ui', 'click: new note');
     const folderId =
       view.kind === 'folder' ? view.id : folders[0]?.id ?? null;
     createNote.mutate(
@@ -130,9 +165,72 @@ export function AppShell() {
       {
         onSuccess: (n) => {
           setActiveNoteId(n.id);
+          t.end({ id: n.id });
         },
+        onError: (err) => t.end({ error: (err as Error).message }),
       },
     );
+  }
+
+  function onAddFolder(input: { name: string; color: string }) {
+    dlog('ui', 'click: add folder', input);
+    createFolder.mutate(input);
+  }
+
+  function onDeleteFolder(folder: FolderDTO) {
+    const ok = window.confirm(
+      `Delete folder "${folder.name}"? Notes in this folder will move to All Notes.`,
+    );
+    if (!ok) return;
+    dlog('ui', 'click: delete folder', { id: folder.id, name: folder.name });
+    deleteFolder.mutate(folder.id, {
+      onSuccess: () => {
+        if (view.kind === 'folder' && view.id === folder.id) {
+          setView({ kind: 'all' });
+        }
+      },
+    });
+  }
+
+  function onTrashNote() {
+    if (!activeNote) return;
+    dlog('ui', 'click: trash note', { id: activeNote.id });
+    patchNote.mutate({ id: activeNote.id, patch: { trashed: true } });
+  }
+
+  function onRestoreNote() {
+    if (!activeNote) return;
+    dlog('ui', 'click: restore note', { id: activeNote.id });
+    patchNote.mutate({ id: activeNote.id, patch: { trashed: false } });
+  }
+
+  function onDeleteForever() {
+    if (!activeNote) return;
+    const ok = window.confirm(
+      `Delete "${activeNote.title || 'Untitled'}" forever? This cannot be undone.`,
+    );
+    if (!ok) return;
+    dlog('ui', 'click: delete forever', { id: activeNote.id });
+    deleteNote.mutate(activeNote.id);
+  }
+
+  function onTogglePinActive() {
+    if (!activeNote) return;
+    dlog('ui', 'click: toggle pin', { id: activeNote.id, next: !activeNote.pinned });
+    patchNote.mutate({ id: activeNote.id, patch: { pinned: !activeNote.pinned } });
+  }
+
+  function onSelectNote(id: string) {
+    dlog('ui', 'click: select note', { id });
+    setActiveNoteId(id);
+  }
+
+  async function onSignOut() {
+    const t = dtime('ui', 'click: sign out');
+    await signOut({ redirect: false });
+    router.push('/login');
+    router.refresh();
+    t.end();
   }
 
   return (
@@ -150,6 +248,9 @@ export function AppShell() {
           theme={settings.theme}
           onToggleTheme={() => setTheme(settings.theme === 'dark' ? 'light' : 'dark')}
           density={settings.density}
+          onAddFolder={onAddFolder}
+          onDeleteFolder={onDeleteFolder}
+          onSignOut={onSignOut}
         />
       )}
       <NoteList
@@ -157,7 +258,7 @@ export function AppShell() {
         tags={tags}
         activeFolderName={activeFolderName}
         activeNoteId={activeNoteId}
-        onSelect={setActiveNoteId}
+        onSelect={onSelectNote}
         search={search}
         onSearch={setSearch}
         density={settings.density}
@@ -177,34 +278,11 @@ export function AppShell() {
           pendingRef.current.contentDirty = true;
           scheduleSave(activeNoteId);
         }}
-        onTogglePin={() => {
-          if (!activeNote) return;
-          patchNote.mutate({ id: activeNote.id, patch: { pinned: !activeNote.pinned } });
-        }}
+        onTogglePin={onTogglePinActive}
+        onTrash={onTrashNote}
+        onRestore={onRestoreNote}
+        onDeleteForever={onDeleteForever}
       />
-      <button
-        onClick={async () => {
-          await signOut({ redirect: false });
-          router.push('/login');
-          router.refresh();
-        }}
-        style={{
-          position: 'fixed',
-          top: 10,
-          right: 18,
-          background: 'transparent',
-          border: '1px solid var(--hair)',
-          color: 'var(--ink-3)',
-          padding: '4px 10px',
-          borderRadius: 7,
-          fontSize: 11,
-          cursor: 'pointer',
-        }}
-        title="Sign out"
-        type="button"
-      >
-        Sign out
-      </button>
       <TweaksPanel />
     </div>
   );

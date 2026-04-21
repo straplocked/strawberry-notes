@@ -24,11 +24,13 @@ import {
   IconRedo,
   IconShare,
   IconStrike,
+  IconTrash,
   IconUnderline,
   IconUndo,
 } from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { countTasks } from '@/lib/editor/prosemirror-utils';
+import { dcount, dlog, drender } from '@/lib/debug';
 import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
 
 import styles from './editor.module.css';
@@ -126,6 +128,9 @@ export interface EditorProps {
   onChangeTitle: (t: string) => void;
   onDirty: () => void;
   onTogglePin: () => void;
+  onTrash?: () => void;
+  onRestore?: () => void;
+  onDeleteForever?: () => void;
   editorRef?: MutableRefObject<TiptapEditor | null>;
   readOnly?: boolean;
 }
@@ -137,9 +142,13 @@ export function Editor({
   onChangeTitle,
   onDirty,
   onTogglePin,
+  onTrash,
+  onRestore,
+  onDeleteForever,
   editorRef,
   readOnly = false,
 }: EditorProps) {
+  drender('Editor', { noteId: note?.id, readOnly });
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
   // Keep the latest callbacks behind refs so `useEditor` doesn't need to
   // re-create the TipTap instance on every parent re-render (typing lag).
@@ -173,13 +182,38 @@ export function Editor({
       editorProps: {
         attributes: { class: styles.pm, 'data-testid': 'pm-editor' },
       },
+      onCreate({ editor }) {
+        dlog('editor', 'onCreate', { noteId: note?.id, docSize: editor.state.doc.content.size });
+      },
+      onDestroy() {
+        dlog('editor', 'onDestroy', { noteId: note?.id });
+      },
+      onFocus() {
+        dlog('editor', 'focus', { noteId: note?.id });
+      },
+      onBlur() {
+        dlog('editor', 'blur', { noteId: note?.id });
+      },
       onUpdate() {
+        dcount('editor', 'onUpdate');
         onDirtyRef.current();
+      },
+      onSelectionUpdate() {
+        dcount('editor', 'onSelectionUpdate');
+      },
+      onTransaction({ transaction }) {
+        // Per-transaction counter is useful when diagnosing perf — don't log each.
+        if (transaction.docChanged) dcount('editor', 'docChanged');
       },
       immediatelyRender: false,
     },
     [note?.id],
   );
+
+  // Tracks whether useEditor has rebuilt the instance (note?.id changed).
+  useEffect(() => {
+    dlog('editor', 'useEditor instance', { noteId: note?.id, hasEditor: !!editor });
+  }, [editor, note?.id]);
 
   useEffect(() => {
     if (editorRef) editorRef.current = editor;
@@ -333,20 +367,53 @@ export function Editor({
         </button>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button
-            style={tbtnStyle(note.pinned)}
-            title={note.pinned ? 'Unpin' : 'Pin'}
-            type="button"
-            onClick={onTogglePin}
-          >
-            {note.pinned ? <IconPinFill size={14} /> : <IconPin size={14} />}
-          </button>
-          <button style={tbtnStyle()} title="Share" type="button">
-            <IconShare size={15} />
-          </button>
-          <button style={tbtnStyle()} title="More" type="button">
-            <IconMore size={15} />
-          </button>
+          {note.trashedAt ? (
+            <>
+              <button
+                style={tbtnStyle()}
+                title="Restore"
+                type="button"
+                onClick={onRestore}
+              >
+                <IconUndo size={15} />
+              </button>
+              <button
+                style={{ ...tbtnStyle(), color: 'var(--berry)' }}
+                title="Delete forever"
+                type="button"
+                onClick={onDeleteForever}
+              >
+                <IconTrash size={15} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                style={tbtnStyle(note.pinned)}
+                title={note.pinned ? 'Unpin' : 'Pin'}
+                type="button"
+                onClick={onTogglePin}
+              >
+                {note.pinned ? <IconPinFill size={14} /> : <IconPin size={14} />}
+              </button>
+              <button style={tbtnStyle()} title="Share" type="button">
+                <IconShare size={15} />
+              </button>
+              <button style={tbtnStyle()} title="More" type="button">
+                <IconMore size={15} />
+              </button>
+              {onTrash && (
+                <button
+                  style={tbtnStyle()}
+                  title="Move to Trash"
+                  type="button"
+                  onClick={onTrash}
+                >
+                  <IconTrash size={15} />
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
 
