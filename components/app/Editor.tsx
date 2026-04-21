@@ -181,6 +181,35 @@ export function Editor({
       editable: !readOnly,
       editorProps: {
         attributes: { class: styles.pm, 'data-testid': 'pm-editor' },
+        // Backspace at the very start of the body jumps the cursor back into
+        // the title (end) and deletes its last character — simulates a
+        // single continuous field spanning title + body.
+        handleKeyDown(view, event) {
+          if (
+            event.key !== 'Backspace' ||
+            event.shiftKey ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.altKey
+          ) {
+            return false;
+          }
+          const { selection } = view.state;
+          // PM position 1 = inside the first top-level node, at its start.
+          if (!selection.empty || selection.from !== 1) return false;
+          const el = titleRef.current;
+          if (!el) return false;
+          event.preventDefault();
+          const next = el.value.slice(0, -1);
+          el.value = next;
+          onChangeTitleRef.current(next);
+          el.focus();
+          el.setSelectionRange(next.length, next.length);
+          el.style.height = 'auto';
+          el.style.height = `${el.scrollHeight}px`;
+          dlog('editor', 'backspace→title');
+          return true;
+        },
       },
       onCreate({ editor }) {
         dlog('editor', 'onCreate', { noteId: note?.id, docSize: editor.state.doc.content.size });
