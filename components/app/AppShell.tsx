@@ -159,34 +159,44 @@ export function AppShell() {
   }, [view, folders, tags, search]);
 
   const activeNote = noteQ.data ?? null;
-  const activeNoteFolder = activeNote
-    ? folders.find((f) => f.id === activeNote.folderId) ?? null
-    : null;
-  const activeNoteTags = (activeNote?.tagIds ?? [])
-    .map((id) => tags.find((t) => t.id === id))
-    .filter((t): t is NonNullable<typeof t> => !!t);
+  const activeNoteFolder = useMemo(
+    () => (activeNote ? folders.find((f) => f.id === activeNote.folderId) ?? null : null),
+    [activeNote, folders],
+  );
+  const activeNoteTags = useMemo(
+    () =>
+      (activeNote?.tagIds ?? [])
+        .map((id) => tags.find((t) => t.id === id))
+        .filter((t): t is NonNullable<typeof t> => !!t),
+    [activeNote, tags],
+  );
 
   const pendingRef = useRef<{ title?: string; contentDirty?: boolean }>({});
   const timerRef = useRef<number | null>(null);
   const editorRef = useRef<TiptapEditor | null>(null);
-  const scheduleSave = (id: string) => {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      const pending = pendingRef.current;
-      pendingRef.current = {};
-      const patch: { title?: string; content?: PMDoc } = {};
-      if (pending.title !== undefined) patch.title = pending.title;
-      if (pending.contentDirty && editorRef.current) {
-        patch.content = editorRef.current.getJSON() as PMDoc;
-      }
-      if (Object.keys(patch).length > 0) {
-        dlog('save', 'autosave fire', { id, fields: Object.keys(patch) });
-        patchNote.mutate({ id, patch });
-      } else {
-        dlog('save', 'autosave noop', { id });
-      }
-    }, 700);
-  };
+  // Stable identity so child callbacks (onChangeTitle, onDirty) can be memoized
+  // without re-creating on every AppShell render.
+  const scheduleSave = useCallback(
+    (id: string) => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => {
+        const pending = pendingRef.current;
+        pendingRef.current = {};
+        const patch: { title?: string; content?: PMDoc } = {};
+        if (pending.title !== undefined) patch.title = pending.title;
+        if (pending.contentDirty && editorRef.current) {
+          patch.content = editorRef.current.getJSON() as PMDoc;
+        }
+        if (Object.keys(patch).length > 0) {
+          dlog('save', 'autosave fire', { id, fields: Object.keys(patch) });
+          patchNote.mutate({ id, patch });
+        } else {
+          dlog('save', 'autosave noop', { id });
+        }
+      }, 700);
+    },
+    [patchNote],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

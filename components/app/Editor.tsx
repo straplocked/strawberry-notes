@@ -6,7 +6,7 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { Image as ImageExt } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { useEffect, useRef, type CSSProperties, type MutableRefObject } from 'react';
+import { memo, useEffect, useRef, type CSSProperties, type MutableRefObject } from 'react';
 import {
   IconAttach,
   IconBold,
@@ -136,7 +136,7 @@ export interface EditorProps {
   loading?: boolean;
 }
 
-export function Editor({
+function EditorImpl({
   note,
   folder,
   tags,
@@ -544,3 +544,5 @@ function ImageUploadButton({ editor }: { editor: TiptapEditor | null }) {
     </>
   );
 }
+
+export const Editor = memo(EditorImpl);

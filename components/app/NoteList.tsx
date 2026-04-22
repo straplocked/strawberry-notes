@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import { IconMore, IconPinFill, IconPlus, IconSearch, IconX } from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { drender } from '@/lib/debug';
@@ -157,7 +157,7 @@ export interface NoteListProps {
   onOpenNoteMenu?: (note: NoteListItemDTO) => void;
 }
 
-export function NoteList({
+function NoteListImpl({
   notes,
   tags,
   activeFolderName,
@@ -376,3 +376,5 @@ function NoteListSkeleton({ dense }: { dense: boolean }) {
     </div>
   );
 }
+
+export const NoteList = memo(NoteListImpl);

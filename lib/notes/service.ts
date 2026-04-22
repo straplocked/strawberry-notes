@@ -1,7 +1,12 @@
 import { and, desc, eq, exists, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { noteTags, notes, tags } from '../db/schema';
-import { docHasImage, docToPlainText, emptyDoc, snippetFromDoc } from '../editor/prosemirror-utils';
+import {
+  docHasImage,
+  docToPlainText,
+  emptyDoc,
+  snippetFromDoc,
+} from '../editor/prosemirror-utils';
 import { setNoteTags, upsertTagsByName } from './tag-resolution';
 import type { NoteDTO, NoteListItemDTO, PMDoc } from '../types';
 
@@ -10,6 +15,11 @@ export interface ListNotesParams {
   tagId?: string | null;
   q?: string | null;
 }
+
+// Shared SQL fragment: aggregate tag ids into a text[] per note via the left-joined note_tags.
+const tagIdsAgg = sql<
+  string[]
+>`coalesce(array_agg(${noteTags.tagId}) filter (where ${noteTags.tagId} is not null), '{}')`;
 
 export async function listNotes(
   userId: string,
@@ -45,11 +55,12 @@ export async function listNotes(
   }
 
   if (q.length > 0) {
-    const tsquery = sql`websearch_to_tsquery('english', ${q})`;
+    // Primary path: the `content_tsv` GIN-indexed generated column (see drizzle/0001_fts.sql).
+    // ILIKE on title is kept as a short/prefix-query fallback; the result set is
+    // already constrained by userId so the scan is cheap.
     conditions.push(
       or(
-        sql`${notes.contentText} @@ ${tsquery}`,
-        sql`${notes.title} @@ ${tsquery}`,
+        sql`"content_tsv" @@ websearch_to_tsquery('english', ${q})`,
         ilike(notes.title, `%${q}%`),
       )!,
     );
@@ -60,58 +71,52 @@ export async function listNotes(
       id: notes.id,
       folderId: notes.folderId,
       title: notes.title,
-      content: notes.content,
+      snippet: notes.snippet,
       contentText: notes.contentText,
+      hasImage: notes.hasImage,
       pinned: notes.pinned,
       updatedAt: notes.updatedAt,
+      tagIds: tagIdsAgg,
     })
     .from(notes)
+    .leftJoin(noteTags, eq(noteTags.noteId, notes.id))
     .where(and(...conditions))
+    .groupBy(notes.id)
     .orderBy(desc(notes.pinned), desc(notes.updatedAt))
     .limit(500);
-
-  const ids = rows.map((r) => r.id);
-  const tagRows =
-    ids.length === 0
-      ? []
-      : await db
-          .select({ noteId: noteTags.noteId, tagId: noteTags.tagId })
-          .from(noteTags)
-          .where(
-            sql`${noteTags.noteId} in (${sql.join(
-              ids.map((id) => sql`${id}::uuid`),
-              sql`, `,
-            )})`,
-          );
-  const tagsByNote = new Map<string, string[]>();
-  for (const t of tagRows) {
-    const list = tagsByNote.get(t.noteId) ?? [];
-    list.push(t.tagId);
-    tagsByNote.set(t.noteId, list);
-  }
 
   return rows.map((r) => ({
     id: r.id,
     folderId: r.folderId,
     title: r.title,
-    snippet: snippetFromDoc(r.content as PMDoc) || r.contentText.slice(0, 180),
+    // Fallback to contentText slice for rows written before the backfill ran.
+    snippet: r.snippet || r.contentText.slice(0, 180),
     pinned: r.pinned,
     updatedAt: r.updatedAt.toISOString(),
-    tagIds: tagsByNote.get(r.id) ?? [],
-    hasImage: docHasImage(r.content as PMDoc),
+    tagIds: r.tagIds ?? [],
+    hasImage: r.hasImage,
   }));
 }
 
 export async function getNote(userId: string, id: string): Promise<NoteDTO | null> {
   const [n] = await db
-    .select()
+    .select({
+      id: notes.id,
+      folderId: notes.folderId,
+      title: notes.title,
+      content: notes.content,
+      contentText: notes.contentText,
+      pinned: notes.pinned,
+      trashedAt: notes.trashedAt,
+      createdAt: notes.createdAt,
+      updatedAt: notes.updatedAt,
+      tagIds: tagIdsAgg,
+    })
     .from(notes)
-    .where(and(eq(notes.id, id), eq(notes.userId, userId)));
+    .leftJoin(noteTags, eq(noteTags.noteId, notes.id))
+    .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+    .groupBy(notes.id);
   if (!n) return null;
-  const tagRows = await db
-    .select({ tagId: noteTags.tagId })
-    .from(noteTags)
-    .where(eq(noteTags.noteId, n.id));
   return {
     id: n.id,
     folderId: n.folderId,
@@ -119,7 +124,7 @@ export async function getNote(userId: string, id: string): Promise<NoteDTO | nul
     content: n.content as PMDoc,
     contentText: n.contentText,
     pinned: n.pinned,
-    tagIds: tagRows.map((r) => r.tagId),
+    tagIds: n.tagIds ?? [],
     trashedAt: n.trashedAt ? n.trashedAt.toISOString() : null,
     updatedAt: n.updatedAt.toISOString(),
     createdAt: n.createdAt.toISOString(),
@@ -143,6 +148,8 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
       title: input.title ?? '',
       content: doc,
       contentText: docToPlainText(doc),
+      snippet: snippetFromDoc(doc),
+      hasImage: docHasImage(doc),
     })
     .returning();
 
@@ -180,12 +187,6 @@ export async function updateNote(
   id: string,
   patch: UpdateNoteInput,
 ): Promise<NoteDTO | null> {
-  const [existing] = await db
-    .select({ id: notes.id })
-    .from(notes)
-    .where(and(eq(notes.id, id), eq(notes.userId, userId)));
-  if (!existing) return null;
-
   const updates: Partial<typeof notes.$inferInsert> = { updatedAt: new Date() };
   if (patch.title !== undefined) updates.title = patch.title;
   if (patch.folderId !== undefined) updates.folderId = patch.folderId;
@@ -196,9 +197,18 @@ export async function updateNote(
   if (patch.content !== undefined) {
     updates.content = patch.content;
     updates.contentText = docToPlainText(patch.content);
+    updates.snippet = snippetFromDoc(patch.content);
+    updates.hasImage = docHasImage(patch.content);
   }
 
-  await db.update(notes).set(updates).where(eq(notes.id, id));
+  // Ownership is enforced in the WHERE; returning() tells us whether the row
+  // existed for this user, saving the ownership preflight round-trip.
+  const updated = await db
+    .update(notes)
+    .set(updates)
+    .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+    .returning({ id: notes.id });
+  if (updated.length === 0) return null;
 
   if (patch.tagNames !== undefined) {
     const tagIds = await upsertTagsByName(userId, patch.tagNames);
@@ -241,10 +251,7 @@ export async function addTagToNote(
   if (!owned) return null;
   const [tagId] = await upsertTagsByName(userId, [name]);
   if (!tagId) return null;
-  await db
-    .insert(noteTags)
-    .values({ noteId, tagId })
-    .onConflictDoNothing();
+  await db.insert(noteTags).values({ noteId, tagId }).onConflictDoNothing();
   return tagId;
 }
 

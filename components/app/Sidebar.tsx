@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useState, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import {
   IconAll,
@@ -200,7 +200,7 @@ export interface SidebarProps {
   alwaysShowFolderActions?: boolean;
 }
 
-export function Sidebar(props: SidebarProps) {
+function SidebarImpl(props: SidebarProps) {
   const { folders, tags, view, onView, density, fullWidth, alwaysShowFolderActions } = props;
   drender('Sidebar', { folders: folders.length, tags: tags.length, view: view.kind });
   const dense = density === 'dense';
@@ -449,3 +449,5 @@ export function Sidebar(props: SidebarProps) {
     </aside>
   );
 }
+
+export const Sidebar = memo(SidebarImpl);

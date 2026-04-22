@@ -50,6 +50,11 @@ export const notes = pgTable(
     content: jsonb('content').notNull().default(sql`'{"type":"doc","content":[]}'::jsonb`),
     // Flattened plain text, recomputed on save. Used for search + snippet.
     contentText: text('content_text').notNull().default(''),
+    // Precomputed snippet (first non-empty prose line, max ~180 chars). Populated
+    // alongside contentText so the note list can be served without touching JSONB.
+    snippet: text('snippet').notNull().default(''),
+    // Precomputed "does this note embed an image?" flag — same motivation as snippet.
+    hasImage: boolean('has_image').notNull().default(false),
     pinned: boolean('pinned').notNull().default(false),
     trashedAt: timestamp('trashed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -58,6 +63,11 @@ export const notes = pgTable(
   (t) => ({
     userFolderIdx: index('notes_user_folder_idx').on(t.userId, t.folderId, t.updatedAt),
     userPinnedIdx: index('notes_user_pinned_idx').on(t.userId, t.pinned, t.updatedAt),
+    userTrashedIdx: index('notes_user_trashed_idx').on(
+      t.userId,
+      t.trashedAt,
+      t.updatedAt.desc(),
+    ),
   }),
 );
 
@@ -92,18 +102,25 @@ export const noteTags = pgTable(
   }),
 );
 
-export const attachments = pgTable('attachments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  noteId: uuid('note_id').references(() => notes.id, { onDelete: 'set null' }),
-  filename: text('filename').notNull(),
-  mime: text('mime').notNull(),
-  size: integer('size').notNull(),
-  storagePath: text('storage_path').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    noteId: uuid('note_id').references(() => notes.id, { onDelete: 'set null' }),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+    size: integer('size').notNull(),
+    storagePath: text('storage_path').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('attachments_user_idx').on(t.userId),
+    noteIdx: index('attachments_note_idx').on(t.noteId),
+  }),
+);
 
 export const apiTokens = pgTable(
   'api_tokens',

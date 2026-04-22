@@ -230,8 +230,11 @@ export function usePatchNote() {
       api.notes.patch(id, patch),
     onMutate: async ({ id, patch }) => {
       dlog('mut', 'patchNote:onMutate', { id, keys: Object.keys(patch) });
+      // Cancel only the single-note query. `patchAllLists` below applies the
+      // optimistic update in-place to every cached notes list; cancelling every
+      // list query on top of that just throws away in-flight refetches (e.g.
+      // the user switched folder mid-autosave) for no gain.
       await qc.cancelQueries({ queryKey: qk.note(id) });
-      await qc.cancelQueries({ queryKey: ['notes'] });
 
       const prevNote = qc.getQueryData<NoteDTO>(qk.note(id));
       const prevLists = snapshotLists(qc);
