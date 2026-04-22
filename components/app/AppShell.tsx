@@ -226,6 +226,11 @@ export function AppShell() {
     setActiveNoteId(id);
   }
 
+  function onMoveNoteToFolder(noteId: string, folderId: string | null) {
+    dlog('ui', 'drop: move note', { noteId, folderId });
+    patchNote.mutate({ id: noteId, patch: { folderId } });
+  }
+
   async function onSignOut() {
     const t = dtime('ui', 'click: sign out');
     await signOut({ redirect: false });
@@ -252,6 +257,7 @@ export function AppShell() {
           onAddFolder={onAddFolder}
           onDeleteFolder={onDeleteFolder}
           onSignOut={onSignOut}
+          onMoveNoteToFolder={onMoveNoteToFolder}
         />
       )}
       <NoteList

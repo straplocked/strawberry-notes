@@ -1,5 +1,6 @@
 'use client';
 
+import type React from 'react';
 import { useState, type CSSProperties } from 'react';
 import {
   IconAll,
@@ -13,6 +14,7 @@ import {
 } from '@/components/icons';
 import { ACCENTS, type Density } from '@/lib/design/accents';
 import { drender } from '@/lib/debug';
+import { DRAG_MIME } from '@/lib/dnd';
 import type { FolderDTO, FolderView, TagDTO } from '@/lib/types';
 
 const styles: Record<string, CSSProperties> = {
@@ -191,6 +193,7 @@ export interface SidebarProps {
   onAddFolder?: (input: { name: string; color: string }) => void;
   onDeleteFolder?: (folder: FolderDTO) => void;
   onSignOut?: () => void;
+  onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -204,6 +207,40 @@ export function Sidebar(props: SidebarProps) {
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [hoverFolderId, setHoverFolderId] = useState<string | null>(null);
+  // Drop-target id: a folder uuid, '__unfiled__' for the "All Notes" row, or null.
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  const makeDropHandlers = (id: string, folderId: string | null) => {
+    if (!props.onMoveNoteToFolder) return {};
+    return {
+      onDragOver: (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dropTargetId !== id) setDropTargetId(id);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        // Ignore leave events that bubble from child elements.
+        if ((e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) return;
+        setDropTargetId((d) => (d === id ? null : d));
+      },
+      onDrop: (e: React.DragEvent) => {
+        const noteId = e.dataTransfer.getData(DRAG_MIME);
+        setDropTargetId(null);
+        if (!noteId) return;
+        e.preventDefault();
+        props.onMoveNoteToFolder?.(noteId, folderId);
+      },
+    };
+  };
+
+  const dropHighlight = (active: boolean): CSSProperties =>
+    active
+      ? {
+          background: 'var(--berry-soft)',
+          boxShadow: '0 0 0 2px var(--berry)',
+        }
+      : {};
 
   const commitDraft = () => {
     const name = draftName.trim();
@@ -231,7 +268,14 @@ export function Sidebar(props: SidebarProps) {
           <div style={styles.sectionHead}>
             <span>Library</span>
           </div>
-          <div style={itemStyle(isActiveKind('all'), dense)} onClick={() => onView({ kind: 'all' })}>
+          <div
+            style={{
+              ...itemStyle(isActiveKind('all'), dense),
+              ...dropHighlight(dropTargetId === '__unfiled__'),
+            }}
+            onClick={() => onView({ kind: 'all' })}
+            {...makeDropHandlers('__unfiled__', null)}
+          >
             <IconAll size={15} style={{ color: isActiveKind('all') ? 'var(--berry)' : 'var(--ink-3)' }} />
             <span>All Notes</span>
             <span style={countStyle}>{props.allCount}</span>
@@ -289,10 +333,14 @@ export function Sidebar(props: SidebarProps) {
             return (
               <div
                 key={f.id}
-                style={itemStyle(active, dense)}
+                style={{
+                  ...itemStyle(active, dense),
+                  ...dropHighlight(dropTargetId === f.id),
+                }}
                 onClick={() => onView({ kind: 'folder', id: f.id })}
                 onMouseEnter={() => setHoverFolderId(f.id)}
                 onMouseLeave={() => setHoverFolderId((h) => (h === f.id ? null : h))}
+                {...makeDropHandlers(f.id, f.id)}
               >
                 <span style={dotStyle(f.color)} />
                 <span

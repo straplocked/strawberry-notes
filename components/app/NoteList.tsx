@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import { IconPinFill, IconSearch, IconX } from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { drender } from '@/lib/debug';
+import { DRAG_MIME } from '@/lib/dnd';
 import type { Density } from '@/lib/design/accents';
 import type { NoteListItemDTO, TagDTO } from '@/lib/types';
 
@@ -221,6 +222,11 @@ export function NoteList({
             <div
               key={n.id}
               style={itemStyle(active, dense)}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(DRAG_MIME, n.id);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
               onClick={() => onSelect(n.id)}
             >
               <div style={leftBarStyle(active)} />
