@@ -1,10 +1,13 @@
 /* Strawberry Notes — minimal PWA service worker.
- * Precaches the app shell; stale-while-revalidate for /api/notes GETs so the
- * list view and active note survive short offline periods. Edits are not
- * queued in v1: failed PATCH/POSTs are surfaced to the UI.
+ *
+ * Shell precache + network-first for API GETs. The previous SWR strategy
+ * served stale counts on refresh even when the client was online; network-
+ * first keeps online users honest, and cached responses still cover short
+ * offline windows. Edits are not queued in v1 — failed PATCH/POSTs surface
+ * to the UI.
  */
 
-const CACHE_VERSION = 'sn-v1';
+const CACHE_VERSION = 'sn-v2';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 const PRECACHE = ['/', '/notes', '/login', '/signup', '/manifest.webmanifest'];
@@ -40,9 +43,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // API: stale-while-revalidate for GETs on notes/folders/tags.
-  if (url.pathname.startsWith('/api/notes') || url.pathname.startsWith('/api/folders') || url.pathname.startsWith('/api/tags')) {
-    event.respondWith(swr(req, DATA_CACHE));
+  // API: network-first so fresh data wins whenever online; cached response
+  // is only returned when the network fails.
+  if (
+    url.pathname.startsWith('/api/notes') ||
+    url.pathname.startsWith('/api/folders') ||
+    url.pathname.startsWith('/api/tags')
+  ) {
+    event.respondWith(networkFirst(req, DATA_CACHE));
     return;
   }
 
@@ -66,16 +74,13 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-function swr(req, cacheName) {
+function networkFirst(req, cacheName) {
   return caches.open(cacheName).then((cache) =>
-    cache.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    }),
+    fetch(req)
+      .then((res) => {
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      })
+      .catch(() => cache.match(req)),
   );
 }
