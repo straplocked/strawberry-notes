@@ -102,6 +102,22 @@ All these are stored per-browser (via `localStorage`), so your phone and laptop 
 
 ---
 
+## Connecting an AI assistant (MCP)
+
+Strawberry Notes speaks the [Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop, Claude Code, Cursor, and other MCP-aware clients can read and write your notes on your behalf.
+
+Quick setup:
+
+1. Sign in, open the gear icon in the sidebar → **Settings**.
+2. Under **Personal Access Tokens**, create a token and copy it (it's shown once).
+3. Point your MCP client at `https://<your-host>/api/mcp` with `Authorization: Bearer <token>`.
+
+The assistant gains tools to list, search, read, create, update, tag, and export your notes. See [../technical/mcp.md](../technical/mcp.md) for the full tool list and a Claude Desktop config example.
+
+Tokens carry the same access as your password — treat them that way, and revoke any you aren't using.
+
+---
+
 ## Keyboard Shortcuts
 
 Standard editor shortcuts are available:

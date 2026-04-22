@@ -20,6 +20,7 @@ Because the best note app is the one you own. Strawberry Notes ships the feature
 - Installable PWA with offline read-only caching
 - Dark/light themes, six accent palettes, density + sidebar toggles
 - Works in one `docker compose up`
+- **MCP server** — connect Claude Desktop or any MCP client to your notes; see [docs/technical/mcp.md](docs/technical/mcp.md)
 
 ## Quickstart
 
