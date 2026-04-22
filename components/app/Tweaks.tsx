@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import { IconSidebar, IconX } from '@/components/icons';
 import { ACCENTS, type AccentId, type Density, type Theme } from '@/lib/design/accents';
 import { useUIStore } from '@/lib/store/ui-store';
+import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 
 const panelStyle: CSSProperties = {
   position: 'fixed',
@@ -135,10 +136,33 @@ const pillStyle: CSSProperties = {
 export function TweaksPanel() {
   const { settings, tweaksOpen, setTweaksOpen, setTheme, setAccent, setDensity, toggleSidebar } =
     useUIStore();
+  const isMobile = useIsMobile();
+
+  const mobilePillStyle: CSSProperties = {
+    ...pillStyle,
+    right: 'calc(16px + env(safe-area-inset-right))',
+    bottom: 'calc(16px + env(safe-area-inset-bottom))',
+  };
+
+  const mobilePanelStyle: CSSProperties = {
+    ...panelStyle,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    borderRadius: '14px 14px 0 0',
+    maxHeight: '80dvh',
+    overflowY: 'auto',
+    paddingBottom: 'env(safe-area-inset-bottom)',
+  };
 
   if (!tweaksOpen) {
     return (
-      <button style={pillStyle} onClick={() => setTweaksOpen(true)} type="button">
+      <button
+        style={isMobile ? mobilePillStyle : pillStyle}
+        onClick={() => setTweaksOpen(true)}
+        type="button"
+      >
         <span
           style={{
             width: 8,
@@ -154,7 +178,7 @@ export function TweaksPanel() {
   }
 
   return (
-    <div style={panelStyle}>
+    <div style={isMobile ? mobilePanelStyle : panelStyle}>
       <div style={headerStyle}>
         <span style={titleStyle}>Tweaks</span>
         <button

@@ -194,10 +194,12 @@ export interface SidebarProps {
   onDeleteFolder?: (folder: FolderDTO) => void;
   onSignOut?: () => void;
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
+  fullWidth?: boolean;
+  alwaysShowFolderActions?: boolean;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { folders, tags, view, onView, density } = props;
+  const { folders, tags, view, onView, density, fullWidth, alwaysShowFolderActions } = props;
   drender('Sidebar', { folders: folders.length, tags: tags.length, view: view.kind });
   const dense = density === 'dense';
   const isActiveKind = (k: FolderView['kind']) => view.kind === k;
@@ -251,8 +253,12 @@ export function Sidebar(props: SidebarProps) {
     setAdding(false);
   };
 
+  const rootStyle: CSSProperties = fullWidth
+    ? { ...styles.root, width: '100%', flexShrink: 1, borderRight: 0 }
+    : styles.root;
+
   return (
-    <aside style={styles.root}>
+    <aside style={rootStyle}>
       <div style={styles.brand}>
         <div style={styles.brandMark}>
           <IconBerry size={30} />
@@ -352,17 +358,26 @@ export function Sidebar(props: SidebarProps) {
                 >
                   {f.name}
                 </span>
-                {hovered && props.onDeleteFolder ? (
-                  <span
-                    style={styles.folderDelete}
-                    title={`Delete folder "${f.name}"`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      props.onDeleteFolder?.(f);
-                    }}
-                  >
-                    <IconTrash size={13} />
-                  </span>
+                {(hovered || alwaysShowFolderActions) && props.onDeleteFolder ? (
+                  <>
+                    <span style={{ ...countStyle, marginLeft: 'auto' }}>{f.count}</span>
+                    <button
+                      type="button"
+                      aria-label={`Delete folder "${f.name}"`}
+                      style={{
+                        ...styles.folderDelete,
+                        marginLeft: 6,
+                        background: 'transparent',
+                        border: 0,
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        props.onDeleteFolder?.(f);
+                      }}
+                    >
+                      <IconTrash size={13} />
+                    </button>
+                  </>
                 ) : (
                   <span style={countStyle}>{f.count}</span>
                 )}

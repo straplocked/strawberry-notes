@@ -35,12 +35,17 @@ export const metadata: Metadata = {
     title: 'Strawberry Notes',
     statusBarStyle: 'black-translucent',
   },
+  icons: {
+    icon: '/icons/favicon.svg',
+    apple: '/icons/apple-touch-icon.png',
+  },
 };
 
 export const viewport: Viewport = {
   themeColor: '#15100f',
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
 };
 
 // Inline theme-init script: applies stored theme + accent before paint to avoid FOUC.

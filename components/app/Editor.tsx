@@ -133,6 +133,7 @@ export interface EditorProps {
   onDeleteForever?: () => void;
   editorRef?: MutableRefObject<TiptapEditor | null>;
   readOnly?: boolean;
+  loading?: boolean;
 }
 
 export function Editor({
@@ -147,6 +148,7 @@ export function Editor({
   onDeleteForever,
   editorRef,
   readOnly = false,
+  loading = false,
 }: EditorProps) {
   drender('Editor', { noteId: note?.id, readOnly });
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
@@ -253,6 +255,15 @@ export function Editor({
   }, [note?.id]);
 
   if (!note) {
+    if (loading) {
+      return (
+        <div className={styles.root}>
+          <div className={styles.emptyState}>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading note…</div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className={styles.root}>
         <div className={styles.emptyState}>

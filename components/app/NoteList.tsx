@@ -1,10 +1,11 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { IconPinFill, IconSearch, IconX } from '@/components/icons';
+import { IconMore, IconPinFill, IconPlus, IconSearch, IconX } from '@/components/icons';
 import { formatDate } from '@/lib/format';
 import { drender } from '@/lib/debug';
 import { DRAG_MIME } from '@/lib/dnd';
+import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import type { Density } from '@/lib/design/accents';
 import type { NoteListItemDTO, TagDTO } from '@/lib/types';
 
@@ -150,6 +151,10 @@ export interface NoteListProps {
   search: string;
   onSearch: (q: string) => void;
   density: Density;
+  fullWidth?: boolean;
+  loading?: boolean;
+  showHeader?: boolean;
+  onOpenNoteMenu?: (note: NoteListItemDTO) => void;
 }
 
 export function NoteList({
@@ -161,6 +166,10 @@ export function NoteList({
   search,
   onSearch,
   density,
+  fullWidth,
+  loading,
+  showHeader = true,
+  onOpenNoteMenu,
 }: NoteListProps) {
   drender('NoteList', {
     count: notes.length,
@@ -169,51 +178,85 @@ export function NoteList({
     folder: activeFolderName,
   });
   const dense = density === 'dense';
+  const isMobile = useIsMobile();
   const tagById = new Map(tags.map((t) => [t.id, t]));
+  const rootStyle: CSSProperties = fullWidth
+    ? { ...styles.root, width: '100%', flexShrink: 1, borderRight: 0 }
+    : styles.root;
   return (
-    <div style={styles.root}>
-      <div style={styles.head}>
-        <div style={styles.titleRow}>
-          <span style={styles.title}>{activeFolderName}</span>
-          <span style={styles.count}>
-            {notes.length} {notes.length === 1 ? 'note' : 'notes'}
-          </span>
-        </div>
-        <div style={styles.search}>
-          <IconSearch size={13} style={{ color: 'var(--ink-4)' }} />
-          <input
-            style={styles.searchInput}
-            placeholder="Search notes"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-          />
-          {search && (
-            <IconX
-              size={12}
-              style={{ color: 'var(--ink-4)', cursor: 'pointer' }}
-              onClick={() => onSearch('')}
+    <div style={rootStyle}>
+      {showHeader && (
+        <div style={styles.head}>
+          <div style={styles.titleRow}>
+            <span style={styles.title}>{activeFolderName}</span>
+            <span style={styles.count}>
+              {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+            </span>
+          </div>
+          <div style={styles.search}>
+            <IconSearch size={13} style={{ color: 'var(--ink-4)' }} />
+            <input
+              style={styles.searchInput}
+              placeholder="Search notes"
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoCorrect="off"
+              autoCapitalize="off"
+              value={search}
+              onChange={(e) => onSearch(e.target.value)}
             />
-          )}
+            {search && (
+              <IconX
+                size={12}
+                style={{ color: 'var(--ink-4)', cursor: 'pointer' }}
+                onClick={() => onSearch('')}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div style={styles.scroll}>
-        {notes.length === 0 && (
+        {loading && notes.length === 0 && <NoteListSkeleton dense={dense} />}
+        {!loading && notes.length === 0 && (
           <div style={styles.empty}>
             No notes here yet.
             <br />
-            Start one with{' '}
-            <span
-              className="mono"
-              style={{
-                background: 'var(--surface-2)',
-                padding: '1px 6px',
-                borderRadius: 4,
-                border: '1px solid var(--hair)',
-              }}
-            >
-              ⌘N
-            </span>
-            .
+            {isMobile ? (
+              <>
+                Tap{' '}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    verticalAlign: 'middle',
+                    padding: 3,
+                    borderRadius: 6,
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--hair)',
+                    color: 'var(--ink-3)',
+                  }}
+                >
+                  <IconPlus size={12} />
+                </span>{' '}
+                above to start one.
+              </>
+            ) : (
+              <>
+                Start one with{' '}
+                <span
+                  className="mono"
+                  style={{
+                    background: 'var(--surface-2)',
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    border: '1px solid var(--hair)',
+                  }}
+                >
+                  ⌘N
+                </span>
+                .
+              </>
+            )}
           </div>
         )}
         {notes.map((n) => {
@@ -268,11 +311,68 @@ export function NoteList({
                   )}
                 </div>
                 {!dense && n.hasImage && <div style={styles.thumb} />}
+                {onOpenNoteMenu && (
+                  <button
+                    type="button"
+                    aria-label="Note actions"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenNoteMenu(n);
+                    }}
+                    style={menuBtnStyle}
+                  >
+                    <IconMore size={15} />
+                  </button>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const menuBtnStyle: CSSProperties = {
+  alignSelf: 'flex-start',
+  width: 32,
+  height: 32,
+  marginLeft: 8,
+  borderRadius: 6,
+  background: 'transparent',
+  border: 0,
+  color: 'var(--ink-3)',
+  cursor: 'pointer',
+  display: 'grid',
+  placeItems: 'center',
+  flexShrink: 0,
+};
+
+function NoteListSkeleton({ dense }: { dense: boolean }) {
+  const rowPad = dense ? '10px 16px' : '14px 16px';
+  const bar = (w: string, mt = 6): CSSProperties => ({
+    height: 10,
+    width: w,
+    borderRadius: 4,
+    marginTop: mt,
+    background: 'var(--surface-2)',
+  });
+  return (
+    <div aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <div
+          key={i}
+          style={{
+            padding: rowPad,
+            borderBottom: '1px solid var(--hair)',
+            opacity: 1 - i * 0.12,
+          }}
+        >
+          <div style={bar('60%', 0)} />
+          <div style={bar('30%')} />
+          <div style={bar('85%')} />
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import type { Editor as TiptapEditor } from '@tiptap/react';
@@ -8,6 +8,10 @@ import { Sidebar } from './Sidebar';
 import { NoteList } from './NoteList';
 import { Editor } from './Editor';
 import { TweaksPanel } from './Tweaks';
+import { MobileTopBar, type MobilePane } from './MobileTopBar';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ActionSheet, type ActionSheetAction } from './ActionSheet';
+import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
   useCreateFolder,
@@ -22,7 +26,12 @@ import {
   useTags,
 } from '@/lib/api/hooks';
 import { dlog, drender, dtime } from '@/lib/debug';
-import type { FolderDTO, PMDoc } from '@/lib/types';
+import type { FolderDTO, NoteListItemDTO, PMDoc } from '@/lib/types';
+
+type ConfirmState =
+  | { kind: 'folder'; folder: FolderDTO }
+  | { kind: 'forever'; noteId: string; noteTitle: string }
+  | null;
 
 export function AppShell() {
   const router = useRouter();
@@ -36,6 +45,12 @@ export function AppShell() {
     settings,
     setTheme,
   } = useUIStore();
+
+  const isMobile = useIsMobile();
+  const [mobilePane, setMobilePane] = useState<MobilePane>('list');
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null);
+  const [actionMenuNote, setActionMenuNote] = useState<NoteListItemDTO | null>(null);
+  const [folderPickerNoteId, setFolderPickerNoteId] = useState<string | null>(null);
 
   const foldersQ = useFolders();
   const tagsQ = useTags();
@@ -56,6 +71,8 @@ export function AppShell() {
     noteStatus: noteQ.status,
     listCount: notesListQ.data?.length ?? 0,
     listStatus: notesListQ.status,
+    isMobile,
+    mobilePane,
   });
 
   const folders = useMemo(() => foldersQ.data ?? [], [foldersQ.data]);
@@ -63,23 +80,27 @@ export function AppShell() {
   const listNotes = useMemo(() => notesListQ.data ?? [], [notesListQ.data]);
   const counts = countsQ.data;
 
-  // Keep the active note valid as the list changes.
+  // Keep the active note valid as the list changes — but on mobile, only when
+  // the user is already on the editor pane, so opening the sidebar or coming
+  // back to the list doesn't auto-jump into a note.
   useEffect(() => {
     dlog('effect', 'AppShell: list/active reconcile', {
       listCount: listNotes.length,
       activeNoteId,
+      isMobile,
+      mobilePane,
     });
     if (listNotes.length === 0) {
       if (activeNoteId) setActiveNoteId(null);
       return;
     }
+    if (isMobile && mobilePane !== 'editor') return;
     if (!activeNoteId || !listNotes.some((n) => n.id === activeNoteId)) {
       dlog('effect', 'AppShell: auto-selecting first note', { id: listNotes[0].id });
       setActiveNoteId(listNotes[0].id);
     }
-  }, [listNotes, activeNoteId, setActiveNoteId]);
+  }, [listNotes, activeNoteId, setActiveNoteId, isMobile, mobilePane]);
 
-  // Log note fetch round-trip end to correlate with the click-to-select log.
   useEffect(() => {
     if (activeNoteId) dlog('ui', 'activeNoteId ->', { id: activeNoteId });
   }, [activeNoteId]);
@@ -88,6 +109,38 @@ export function AppShell() {
     if (noteQ.data) dlog('ui', 'note loaded', { id: noteQ.data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteQ.data?.id]);
+
+  // Browser-back integration on mobile: push a stack entry when entering
+  // editor/folders, pop when leaving. skipNextPop avoids recursion when we
+  // trigger history.back() ourselves.
+  const skipNextPop = useRef(false);
+  useEffect(() => {
+    if (!isMobile) return;
+    const onPop = () => {
+      if (skipNextPop.current) {
+        skipNextPop.current = false;
+        return;
+      }
+      setMobilePane((p) => (p === 'editor' || p === 'folders' ? 'list' : p));
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [isMobile]);
+
+  const pushMobilePane = useCallback((next: MobilePane) => {
+    setMobilePane((prev) => {
+      if (prev === next) return prev;
+      if (typeof window !== 'undefined') {
+        if ((next === 'editor' || next === 'folders') && prev === 'list') {
+          window.history.pushState({ sbPane: next }, '');
+        } else if (next === 'list' && (prev === 'editor' || prev === 'folders')) {
+          skipNextPop.current = true;
+          window.history.back();
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const activeFolderName = useMemo(() => {
     if (search.trim()) return 'Search';
@@ -113,8 +166,6 @@ export function AppShell() {
     .map((id) => tags.find((t) => t.id === id))
     .filter((t): t is NonNullable<typeof t> => !!t);
 
-  // Debounced autosave. Content is pulled from the live editor at save time,
-  // so we don't serialize the doc on every keystroke.
   const pendingRef = useRef<{ title?: string; contentDirty?: boolean }>({});
   const timerRef = useRef<number | null>(null);
   const editorRef = useRef<TiptapEditor | null>(null);
@@ -137,7 +188,6 @@ export function AppShell() {
     }, 700);
   };
 
-  // Hotkeys.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -159,14 +209,13 @@ export function AppShell() {
 
   function onNewNote() {
     const t = dtime('ui', 'click: new note');
-    // Apple-Notes style: only attach to a folder when the user is viewing one.
-    // All Notes / Pinned / Trash / Tag views create an unfiled note.
     const folderId = view.kind === 'folder' ? view.id : null;
     createNote.mutate(
       { folderId, title: '' },
       {
         onSuccess: (n) => {
           setActiveNoteId(n.id);
+          if (isMobile) pushMobilePane('editor');
           t.end({ id: n.id });
         },
         onError: (err) => t.end({ error: (err as Error).message }),
@@ -179,11 +228,11 @@ export function AppShell() {
     createFolder.mutate(input);
   }
 
-  function onDeleteFolder(folder: FolderDTO) {
-    const ok = window.confirm(
-      `Delete folder "${folder.name}"? Notes in this folder will move to All Notes.`,
-    );
-    if (!ok) return;
+  function onRequestDeleteFolder(folder: FolderDTO) {
+    setConfirmState({ kind: 'folder', folder });
+  }
+
+  function confirmDeleteFolder(folder: FolderDTO) {
     dlog('ui', 'click: delete folder', { id: folder.id, name: folder.name });
     deleteFolder.mutate(folder.id, {
       onSuccess: () => {
@@ -198,6 +247,7 @@ export function AppShell() {
     if (!activeNote) return;
     dlog('ui', 'click: trash note', { id: activeNote.id });
     patchNote.mutate({ id: activeNote.id, patch: { trashed: true } });
+    if (isMobile) pushMobilePane('list');
   }
 
   function onRestoreNote() {
@@ -206,14 +256,19 @@ export function AppShell() {
     patchNote.mutate({ id: activeNote.id, patch: { trashed: false } });
   }
 
-  function onDeleteForever() {
+  function onRequestDeleteForever() {
     if (!activeNote) return;
-    const ok = window.confirm(
-      `Delete "${activeNote.title || 'Untitled'}" forever? This cannot be undone.`,
-    );
-    if (!ok) return;
-    dlog('ui', 'click: delete forever', { id: activeNote.id });
-    deleteNote.mutate(activeNote.id);
+    setConfirmState({
+      kind: 'forever',
+      noteId: activeNote.id,
+      noteTitle: activeNote.title || 'Untitled',
+    });
+  }
+
+  function confirmDeleteForever(noteId: string) {
+    dlog('ui', 'click: delete forever', { id: noteId });
+    deleteNote.mutate(noteId);
+    if (isMobile) pushMobilePane('list');
   }
 
   function onTogglePinActive() {
@@ -225,10 +280,11 @@ export function AppShell() {
   function onSelectNote(id: string) {
     dlog('ui', 'click: select note', { id });
     setActiveNoteId(id);
+    if (isMobile) pushMobilePane('editor');
   }
 
   function onMoveNoteToFolder(noteId: string, folderId: string | null) {
-    dlog('ui', 'drop: move note', { noteId, folderId });
+    dlog('ui', 'move note', { noteId, folderId });
     patchNote.mutate({ id: noteId, patch: { folderId } });
   }
 
@@ -240,58 +296,250 @@ export function AppShell() {
     t.end();
   }
 
-  return (
+  const onViewFromSidebar = (v: typeof view) => {
+    setView(v);
+    if (isMobile) pushMobilePane('list');
+  };
+
+  // Build the action-menu contents for the note the user long-tapped ⋯ on.
+  const menuActions: ActionSheetAction[] = useMemo(() => {
+    const n = actionMenuNote;
+    if (!n) return [];
+    const closeMenu = () => setActionMenuNote(null);
+    const isTrash = view.kind === 'trash';
+    const acts: ActionSheetAction[] = [];
+    if (!isTrash) {
+      acts.push({
+        id: 'move',
+        label: 'Move to folder…',
+        onSelect: () => {
+          setFolderPickerNoteId(n.id);
+          closeMenu();
+        },
+      });
+      acts.push({
+        id: 'pin',
+        label: n.pinned ? 'Unpin' : 'Pin to top',
+        onSelect: () => {
+          patchNote.mutate({ id: n.id, patch: { pinned: !n.pinned } });
+          closeMenu();
+        },
+      });
+      acts.push({
+        id: 'trash',
+        label: 'Move to trash',
+        destructive: true,
+        onSelect: () => {
+          patchNote.mutate({ id: n.id, patch: { trashed: true } });
+          if (activeNoteId === n.id) setActiveNoteId(null);
+          closeMenu();
+        },
+      });
+    } else {
+      acts.push({
+        id: 'restore',
+        label: 'Restore',
+        onSelect: () => {
+          patchNote.mutate({ id: n.id, patch: { trashed: false } });
+          closeMenu();
+        },
+      });
+      acts.push({
+        id: 'forever',
+        label: 'Delete forever…',
+        destructive: true,
+        onSelect: () => {
+          setConfirmState({
+            kind: 'forever',
+            noteId: n.id,
+            noteTitle: n.title || 'Untitled',
+          });
+          closeMenu();
+        },
+      });
+    }
+    return acts;
+  }, [actionMenuNote, view.kind, patchNote, activeNoteId, setActiveNoteId]);
+
+  const folderPickerActions: ActionSheetAction[] = useMemo(() => {
+    if (!folderPickerNoteId) return [];
+    const close = () => setFolderPickerNoteId(null);
+    const pick = (folderId: string | null) => {
+      onMoveNoteToFolder(folderPickerNoteId, folderId);
+      close();
+    };
+    return [
+      { id: 'unfiled', label: 'All Notes (unfiled)', onSelect: () => pick(null) },
+      ...folders.map((f) => ({
+        id: f.id,
+        label: f.name,
+        onSelect: () => pick(f.id),
+      })),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folderPickerNoteId, folders]);
+
+  // Desktop keeps `sidebarHidden`; on mobile we always keep Sidebar mounted
+  // under the 'folders' pane, so the setting doesn't apply.
+  const showSidebar = isMobile ? true : !settings.sidebarHidden;
+
+  const sidebarEl = showSidebar ? (
+    <Sidebar
+      folders={folders}
+      tags={tags}
+      allCount={counts?.all ?? 0}
+      pinnedCount={counts?.pinned ?? 0}
+      trashCount={counts?.trash ?? 0}
+      view={view}
+      onView={onViewFromSidebar}
+      onNew={onNewNote}
+      theme={settings.theme}
+      onToggleTheme={() => setTheme(settings.theme === 'dark' ? 'light' : 'dark')}
+      density={settings.density}
+      onAddFolder={onAddFolder}
+      onDeleteFolder={onRequestDeleteFolder}
+      onSignOut={onSignOut}
+      onMoveNoteToFolder={onMoveNoteToFolder}
+      fullWidth={isMobile}
+      alwaysShowFolderActions={isMobile}
+    />
+  ) : null;
+
+  const noteListEl = (
+    <NoteList
+      notes={listNotes}
+      tags={tags}
+      activeFolderName={activeFolderName}
+      activeNoteId={activeNoteId}
+      onSelect={onSelectNote}
+      search={search}
+      onSearch={setSearch}
+      density={settings.density}
+      fullWidth={isMobile}
+      loading={notesListQ.isPending && !notesListQ.data}
+      onOpenNoteMenu={isMobile ? (n) => setActionMenuNote(n) : undefined}
+    />
+  );
+
+  const editorEl = (
+    <Editor
+      note={activeNote}
+      folder={activeNoteFolder}
+      tags={activeNoteTags}
+      editorRef={editorRef}
+      loading={!!activeNoteId && noteQ.isPending && !noteQ.data}
+      onChangeTitle={(title) => {
+        if (!activeNoteId) return;
+        pendingRef.current.title = title;
+        scheduleSave(activeNoteId);
+      }}
+      onDirty={() => {
+        if (!activeNoteId) return;
+        pendingRef.current.contentDirty = true;
+        scheduleSave(activeNoteId);
+      }}
+      onTogglePin={onTogglePinActive}
+      onTrash={onTrashNote}
+      onRestore={onRestoreNote}
+      onDeleteForever={onRequestDeleteForever}
+    />
+  );
+
+  const mobileTitle =
+    mobilePane === 'folders'
+      ? 'Folders'
+      : mobilePane === 'editor'
+        ? activeNote?.title || (noteQ.isPending ? 'Loading…' : 'Untitled')
+        : activeFolderName;
+
+  const content = isMobile ? (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100dvh',
+        background: 'var(--bg)',
+      }}
+    >
+      <MobileTopBar
+        pane={mobilePane}
+        title={mobileTitle}
+        onOpenFolders={() => pushMobilePane('folders')}
+        onCloseFolders={() => pushMobilePane('list')}
+        onBackToList={() => pushMobilePane('list')}
+        onNewNote={onNewNote}
+      />
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <div style={paneWrap(mobilePane === 'folders')}>{sidebarEl}</div>
+        <div style={paneWrap(mobilePane === 'list')}>{noteListEl}</div>
+        <div style={paneWrap(mobilePane === 'editor')}>{editorEl}</div>
+      </div>
+    </div>
+  ) : (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
-      {!settings.sidebarHidden && (
-        <Sidebar
-          folders={folders}
-          tags={tags}
-          allCount={counts?.all ?? 0}
-          pinnedCount={counts?.pinned ?? 0}
-          trashCount={counts?.trash ?? 0}
-          view={view}
-          onView={setView}
-          onNew={onNewNote}
-          theme={settings.theme}
-          onToggleTheme={() => setTheme(settings.theme === 'dark' ? 'light' : 'dark')}
-          density={settings.density}
-          onAddFolder={onAddFolder}
-          onDeleteFolder={onDeleteFolder}
-          onSignOut={onSignOut}
-          onMoveNoteToFolder={onMoveNoteToFolder}
-        />
-      )}
-      <NoteList
-        notes={listNotes}
-        tags={tags}
-        activeFolderName={activeFolderName}
-        activeNoteId={activeNoteId}
-        onSelect={onSelectNote}
-        search={search}
-        onSearch={setSearch}
-        density={settings.density}
-      />
-      <Editor
-        note={activeNote}
-        folder={activeNoteFolder}
-        tags={activeNoteTags}
-        editorRef={editorRef}
-        onChangeTitle={(title) => {
-          if (!activeNoteId) return;
-          pendingRef.current.title = title;
-          scheduleSave(activeNoteId);
-        }}
-        onDirty={() => {
-          if (!activeNoteId) return;
-          pendingRef.current.contentDirty = true;
-          scheduleSave(activeNoteId);
-        }}
-        onTogglePin={onTogglePinActive}
-        onTrash={onTrashNote}
-        onRestore={onRestoreNote}
-        onDeleteForever={onDeleteForever}
-      />
-      <TweaksPanel />
+      {sidebarEl}
+      {noteListEl}
+      {editorEl}
     </div>
   );
+
+  return (
+    <>
+      {content}
+      <TweaksPanel />
+      <ConfirmDialog
+        open={confirmState?.kind === 'folder'}
+        title="Delete folder?"
+        message={
+          confirmState?.kind === 'folder'
+            ? `Delete folder "${confirmState.folder.name}"? Notes in this folder will move to All Notes.`
+            : ''
+        }
+        confirmLabel="Delete folder"
+        destructive
+        onConfirm={() => {
+          if (confirmState?.kind === 'folder') confirmDeleteFolder(confirmState.folder);
+          setConfirmState(null);
+        }}
+        onCancel={() => setConfirmState(null)}
+      />
+      <ConfirmDialog
+        open={confirmState?.kind === 'forever'}
+        title="Delete forever?"
+        message={
+          confirmState?.kind === 'forever'
+            ? `Delete "${confirmState.noteTitle}" forever? This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete forever"
+        destructive
+        onConfirm={() => {
+          if (confirmState?.kind === 'forever') confirmDeleteForever(confirmState.noteId);
+          setConfirmState(null);
+        }}
+        onCancel={() => setConfirmState(null)}
+      />
+      <ActionSheet
+        open={!!actionMenuNote}
+        title={actionMenuNote?.title || 'Untitled'}
+        actions={menuActions}
+        onClose={() => setActionMenuNote(null)}
+      />
+      <ActionSheet
+        open={!!folderPickerNoteId}
+        title="Move to folder"
+        actions={folderPickerActions}
+        onClose={() => setFolderPickerNoteId(null)}
+      />
+    </>
+  );
+}
+
+function paneWrap(visible: boolean): CSSProperties {
+  return {
+    position: 'absolute',
+    inset: 0,
+    display: visible ? 'flex' : 'none',
+    flexDirection: 'column',
+  };
 }

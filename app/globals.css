@@ -118,3 +118,29 @@ textarea {
   font-family: inherit;
   color: inherit;
 }
+
+/* Mobile ergonomics */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+@media (max-width: 767.98px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
