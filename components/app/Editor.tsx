@@ -181,9 +181,10 @@ export function Editor({
       editable: !readOnly,
       editorProps: {
         attributes: { class: styles.pm, 'data-testid': 'pm-editor' },
-        // Backspace at the very start of the body jumps the cursor back into
-        // the title (end) and deletes its last character — simulates a
-        // single continuous field spanning title + body.
+        // Backspace at the very start of the body moves the cursor to the
+        // end of the title — treats the title/body gap as a single "line
+        // break" that one backspace consumes. A subsequent backspace then
+        // deletes a title character via native textarea behaviour.
         handleKeyDown(view, event) {
           if (
             event.key !== 'Backspace' ||
@@ -200,13 +201,8 @@ export function Editor({
           const el = titleRef.current;
           if (!el) return false;
           event.preventDefault();
-          const next = el.value.slice(0, -1);
-          el.value = next;
-          onChangeTitleRef.current(next);
           el.focus();
-          el.setSelectionRange(next.length, next.length);
-          el.style.height = 'auto';
-          el.style.height = `${el.scrollHeight}px`;
+          el.setSelectionRange(el.value.length, el.value.length);
           dlog('editor', 'backspace→title');
           return true;
         },
