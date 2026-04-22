@@ -13,6 +13,7 @@ Audience: engineers extending, operating, or reviewing Strawberry Notes.
 | [frontend.md](frontend.md)                 | Component map, state model, styling/theming approach.                 |
 | [testing.md](testing.md)                   | Vitest setup, existing coverage, gaps.                                |
 | [deployment.md](deployment.md)             | Docker build, env vars, reverse proxy, backup/restore.                |
+| [mcp.md](mcp.md)                           | MCP server at `/api/mcp`, personal access tokens, tool reference.     |
 
 ---
 

@@ -24,6 +24,14 @@ Feature surface delivered by the v1 build:
 - Theming: dark/light, six accent palettes, three density levels, sidebar toggle.
 - Docker deployment: multi-stage build, entrypoint with `wait-for-postgres` + `drizzle-kit migrate`, named volumes, host port 3200.
 
+### v1.x — MCP server (2026-04-21)
+
+- **MCP endpoint** at `POST /api/mcp` (stateless Streamable HTTP, JSON-RPC). Lets Claude Desktop, Claude Code, Cursor, and other MCP clients read/search/create/update/tag/export the signed-in user's notes.
+- **Personal access tokens** — new `api_tokens` table, `Settings → Personal Access Tokens` UI to mint/revoke; SHA-256 at rest, shown to the operator once.
+- **Shared notes/folder/tag services** (`lib/notes/service.ts`, `lib/notes/folder-service.ts`, `lib/notes/tag-service.ts`) — REST handlers and MCP tools call the same functions so they cannot drift.
+
+Non-bloat justification: this is the existing REST surface re-exposed via a different transport — no new product surface, no plugin model, and zero operator cost until the first token is minted. See [../technical/mcp.md](../technical/mcp.md).
+
 See [../../CHANGELOG.md](../CHANGELOG.md) for the per-doc-refresh history; see `git log` for the per-code-change history.
 
 ---

@@ -2,9 +2,11 @@
 
 import type React from 'react';
 import { useState, type CSSProperties } from 'react';
+import Link from 'next/link';
 import {
   IconAll,
   IconBerry,
+  IconCog,
   IconLogout,
   IconMoon,
   IconPin,
@@ -415,6 +417,9 @@ export function Sidebar(props: SidebarProps) {
         >
           {props.theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
         </button>
+        <Link href="/settings" title="Settings" style={styles.footBtn}>
+          <IconCog size={15} />
+        </Link>
         {props.onSignOut && (
           <button
             style={styles.footBtn}

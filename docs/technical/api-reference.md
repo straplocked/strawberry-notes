@@ -182,6 +182,36 @@ Streams the attachment back.
 
 ---
 
+## Personal Access Tokens
+
+Gated by the session cookie (`requireUserId()`), not by a bearer token — you mint tokens from a logged-in browser.
+
+### `GET /api/tokens`
+
+List the signed-in user's non-revoked tokens. Token bodies are never returned; only `{ id, name, prefix, lastUsedAt, createdAt }`. Ordered `createdAt DESC`.
+
+### `POST /api/tokens`
+
+Request: `{ "name": "Claude Desktop" }` (1–80 chars).
+
+Response: `{ id, name, prefix, token }`. The `token` field (`snb_...`) is returned **once**; only its SHA-256 hash is persisted.
+
+### `DELETE /api/tokens/:id`
+
+Revokes a token (sets `revokedAt`). Subsequent calls with that token return `401`. Returns `{ ok: true }` or `404`.
+
+---
+
+## MCP
+
+### `POST /api/mcp`
+
+Stateless Streamable HTTP transport for the Model Context Protocol. JSON-RPC 2.0 in, JSON-RPC 2.0 out. Requires `Authorization: Bearer <snb_...>`; session cookies are **not** accepted. See [mcp.md](mcp.md) for the full tool reference and client-config examples.
+
+`GET` and `DELETE` return `405` — there is no SSE stream and no session state in v1.
+
+---
+
 ## DTO Shapes
 
 Canonical TypeScript types live in `lib/types.ts`. Client-side hooks (`lib/api/hooks.ts`) and the fetch wrapper (`lib/api/client.ts`) speak these types end-to-end. If you add or change an endpoint, update `lib/types.ts` **and** this file in the same change.

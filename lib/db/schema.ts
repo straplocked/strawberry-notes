@@ -105,8 +105,29 @@ export const attachments = pgTable('attachments', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('api_tokens_user_idx').on(t.userId),
+    hashUq: unique('api_tokens_hash_uq').on(t.tokenHash),
+  }),
+);
+
 export type User = InferSelectModel<typeof users>;
 export type Folder = InferSelectModel<typeof folders>;
 export type Note = InferSelectModel<typeof notes>;
 export type Tag = InferSelectModel<typeof tags>;
 export type Attachment = InferSelectModel<typeof attachments>;
+export type ApiToken = InferSelectModel<typeof apiTokens>;
