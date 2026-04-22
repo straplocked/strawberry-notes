@@ -1,5 +1,5 @@
 import { dtime } from '../debug';
-import type { FolderDTO, NoteDTO, NoteListItemDTO, PMDoc, TagDTO } from '../types';
+import type { FolderDTO, NoteCountsDTO, NoteDTO, NoteListItemDTO, PMDoc, TagDTO } from '../types';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -44,6 +44,7 @@ export const api = {
     list: () => req<TagDTO[]>('GET', '/api/tags'),
   },
   notes: {
+    counts: () => req<NoteCountsDTO>('GET', '/api/notes/counts'),
     list: (params: { folder?: string; tag?: string; q?: string }) => {
       const search = new URLSearchParams();
       if (params.folder) search.set('folder', params.folder);

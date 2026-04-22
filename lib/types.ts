@@ -54,6 +54,12 @@ export type FolderView =
   | { kind: 'folder'; id: string }
   | { kind: 'tag'; id: string };
 
+export interface NoteCountsDTO {
+  all: number;
+  pinned: number;
+  trash: number;
+}
+
 export function folderViewKey(v: FolderView): string {
   switch (v.kind) {
     case 'all':

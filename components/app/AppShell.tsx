@@ -16,6 +16,7 @@ import {
   useDeleteNote,
   useFolders,
   useNote,
+  useNoteCounts,
   useNotesList,
   usePatchNote,
   useTags,
@@ -38,6 +39,7 @@ export function AppShell() {
 
   const foldersQ = useFolders();
   const tagsQ = useTags();
+  const countsQ = useNoteCounts();
   const notesListQ = useNotesList(view, search);
   const noteQ = useNote(activeNoteId);
 
@@ -59,6 +61,7 @@ export function AppShell() {
   const folders = useMemo(() => foldersQ.data ?? [], [foldersQ.data]);
   const tags = useMemo(() => tagsQ.data ?? [], [tagsQ.data]);
   const listNotes = useMemo(() => notesListQ.data ?? [], [notesListQ.data]);
+  const counts = countsQ.data;
 
   // Keep the active note valid as the list changes.
   useEffect(() => {
@@ -85,8 +88,6 @@ export function AppShell() {
     if (noteQ.data) dlog('ui', 'note loaded', { id: noteQ.data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteQ.data?.id]);
-
-  const totalAll = useMemo(() => folders.reduce((sum, f) => sum + f.count, 0), [folders]);
 
   const activeFolderName = useMemo(() => {
     if (search.trim()) return 'Search';
@@ -245,9 +246,9 @@ export function AppShell() {
         <Sidebar
           folders={folders}
           tags={tags}
-          allCount={view.kind === 'all' ? listNotes.length : totalAll}
-          pinnedCount={view.kind === 'pinned' ? listNotes.length : 0}
-          trashCount={view.kind === 'trash' ? listNotes.length : 0}
+          allCount={counts?.all ?? 0}
+          pinnedCount={counts?.pinned ?? 0}
+          trashCount={counts?.trash ?? 0}
           view={view}
           onView={setView}
           onNew={onNewNote}

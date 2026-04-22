@@ -13,6 +13,7 @@ import { dlog, dtime } from '../debug';
 import type {
   FolderDTO,
   FolderView,
+  NoteCountsDTO,
   NoteDTO,
   NoteListItemDTO,
   PMDoc,
@@ -23,6 +24,7 @@ import { folderViewKey } from '../types';
 export const qk = {
   folders: ['folders'] as const,
   tags: ['tags'] as const,
+  counts: ['noteCounts'] as const,
   notesList: (view: FolderView, q: string) => ['notes', folderViewKey(view), q] as const,
   note: (id: string) => ['note', id] as const,
 };
@@ -53,6 +55,14 @@ export function useTags(): UseQueryResult<TagDTO[]> {
   return useQuery({
     queryKey: qk.tags,
     queryFn: api.tags.list,
+    staleTime: 30_000,
+  });
+}
+
+export function useNoteCounts(): UseQueryResult<NoteCountsDTO> {
+  return useQuery({
+    queryKey: qk.counts,
+    queryFn: api.notes.counts,
     staleTime: 30_000,
   });
 }
@@ -186,6 +196,7 @@ export function useCreateNote() {
     },
     onSuccess: (note, _input, ctx) => {
       dlog('mut', 'createNote:success', { id: note.id });
+      qc.invalidateQueries({ queryKey: qk.counts });
       const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
       if (!tempId) return;
       // Swap temp id for real id in every cached list
@@ -347,6 +358,10 @@ export function usePatchNote() {
       if (patch.folderId !== undefined || patch.trashed !== undefined) {
         qc.invalidateQueries({ queryKey: qk.folders });
       }
+      // Top-level counts depend on pinned / trashed state.
+      if (patch.pinned !== undefined || patch.trashed !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.counts });
+      }
     },
   });
 }
@@ -388,6 +403,7 @@ export function useDeleteNote() {
     onSuccess: () => {
       dlog('mut', 'deleteNote:success');
       qc.invalidateQueries({ queryKey: qk.folders });
+      qc.invalidateQueries({ queryKey: qk.counts });
     },
   });
 }
