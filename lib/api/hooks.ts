@@ -298,12 +298,26 @@ export function usePatchNote() {
           patch.trashed !== undefined ? patch.trashed : beforeTrashed;
         const after =
           patch.folderId !== undefined ? patch.folderId : before;
-        const delta = (fid: string | null, sign: 1 | -1) =>
+        // Skip the setQueryData write entirely when the target isn't a real
+        // folder (null = unfiled). Clamp at 0 so a stale `prevNote` that leads
+        // to an over-decrement can never display a negative count.
+        const delta = (fid: string | null, sign: 1 | -1) => {
+          if (!fid) return;
           qc.setQueryData<FolderDTO[]>(qk.folders, (fs) =>
-            (fs ?? []).map((f) =>
-              fid && f.id === fid ? { ...f, count: f.count + sign } : f,
-            ),
+            (fs ?? []).map((f) => {
+              if (f.id !== fid) return f;
+              const next = Math.max(0, f.count + sign);
+              dlog('mut', 'folder count delta', {
+                folderId: fid,
+                name: f.name,
+                from: f.count,
+                to: next,
+                sign,
+              });
+              return { ...f, count: next };
+            }),
           );
+        };
         if (beforeTrashed !== afterTrashed) {
           // Going into trash → decrement old folder count; leaving trash → increment current folder.
           if (afterTrashed) delta(before, -1);
@@ -323,10 +337,16 @@ export function usePatchNote() {
       restoreLists(qc, ctx.prevLists);
       if (ctx.prevFolders) qc.setQueryData(qk.folders, ctx.prevFolders);
     },
-    onSuccess: (note) => {
+    onSuccess: (note, { patch }) => {
       dlog('mut', 'patchNote:success', { id: note.id });
       // Canonicalize the single-note cache with the server's response.
       qc.setQueryData(qk.note(note.id), note);
+      // If this patch could have touched folder counts, reconcile with the
+      // server. Optimistic math can drift (e.g. moving a note whose single-
+      // note cache was never populated), and the folders list is tiny.
+      if (patch.folderId !== undefined || patch.trashed !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.folders });
+      }
     },
   });
 }
@@ -367,6 +387,7 @@ export function useDeleteNote() {
     },
     onSuccess: () => {
       dlog('mut', 'deleteNote:success');
+      qc.invalidateQueries({ queryKey: qk.folders });
     },
   });
 }
