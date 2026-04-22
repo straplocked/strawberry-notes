@@ -362,6 +362,17 @@ export function usePatchNote() {
       if (patch.pinned !== undefined || patch.trashed !== undefined) {
         qc.invalidateQueries({ queryKey: qk.counts });
       }
+      // patchAllLists only removes notes from lists they no longer belong to;
+      // it never *adds* a note that newly qualifies (pin=true → Pinned view,
+      // folder=X → notes:folder:X). Invalidate to let the server-side
+      // WHERE clauses rebuild any list whose membership may have changed.
+      if (
+        patch.pinned !== undefined ||
+        patch.trashed !== undefined ||
+        patch.folderId !== undefined
+      ) {
+        qc.invalidateQueries({ queryKey: ['notes'] });
+      }
     },
   });
 }
