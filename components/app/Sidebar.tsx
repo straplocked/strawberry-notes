@@ -7,6 +7,7 @@ import {
   IconAll,
   IconBerry,
   IconCog,
+  IconEdit,
   IconLogout,
   IconMoon,
   IconPin,
@@ -194,6 +195,7 @@ export interface SidebarProps {
   density: Density;
   onAddFolder?: (input: { name: string; color: string }) => void;
   onDeleteFolder?: (folder: FolderDTO) => void;
+  onRenameFolder?: (folder: FolderDTO, name: string) => void;
   onSignOut?: () => void;
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
   fullWidth?: boolean;
@@ -210,6 +212,8 @@ function SidebarImpl(props: SidebarProps) {
 
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [hoverFolderId, setHoverFolderId] = useState<string | null>(null);
   // Drop-target id: a folder uuid, '__unfiled__' for the "All Notes" row, or null.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -253,6 +257,15 @@ function SidebarImpl(props: SidebarProps) {
     }
     setDraftName('');
     setAdding(false);
+  };
+
+  const commitRename = (folder: FolderDTO) => {
+    const name = renameDraft.trim();
+    if (name && name !== folder.name && props.onRenameFolder) {
+      props.onRenameFolder(folder, name);
+    }
+    setRenamingId(null);
+    setRenameDraft('');
   };
 
   const rootStyle: CSSProperties = fullWidth
@@ -338,6 +351,36 @@ function SidebarImpl(props: SidebarProps) {
           {folders.map((f) => {
             const active = isActiveFolder(f.id);
             const hovered = hoverFolderId === f.id;
+            const isRenaming = renamingId === f.id;
+            if (isRenaming) {
+              return (
+                <div key={f.id} style={styles.newFolderRow}>
+                  <span style={dotStyle(f.color)} />
+                  <input
+                    autoFocus
+                    style={styles.newFolderInput}
+                    placeholder="Folder name"
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitRename(f);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setRenamingId(null);
+                        setRenameDraft('');
+                      }
+                    }}
+                    onBlur={() => commitRename(f)}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                </div>
+              );
+            }
+            const showActions =
+              (hovered || alwaysShowFolderActions) &&
+              (props.onDeleteFolder || props.onRenameFolder);
             return (
               <div
                 key={f.id}
@@ -360,25 +403,46 @@ function SidebarImpl(props: SidebarProps) {
                 >
                   {f.name}
                 </span>
-                {(hovered || alwaysShowFolderActions) && props.onDeleteFolder ? (
+                {showActions ? (
                   <>
                     <span style={{ ...countStyle, marginLeft: 'auto' }}>{f.count}</span>
-                    <button
-                      type="button"
-                      aria-label={`Delete folder "${f.name}"`}
-                      style={{
-                        ...styles.folderDelete,
-                        marginLeft: 6,
-                        background: 'transparent',
-                        border: 0,
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        props.onDeleteFolder?.(f);
-                      }}
-                    >
-                      <IconTrash size={13} />
-                    </button>
+                    {props.onRenameFolder && (
+                      <button
+                        type="button"
+                        aria-label={`Rename folder "${f.name}"`}
+                        style={{
+                          ...styles.folderDelete,
+                          marginLeft: 6,
+                          background: 'transparent',
+                          border: 0,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingId(f.id);
+                          setRenameDraft(f.name);
+                        }}
+                      >
+                        <IconEdit size={13} />
+                      </button>
+                    )}
+                    {props.onDeleteFolder && (
+                      <button
+                        type="button"
+                        aria-label={`Delete folder "${f.name}"`}
+                        style={{
+                          ...styles.folderDelete,
+                          marginLeft: 6,
+                          background: 'transparent',
+                          border: 0,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onDeleteFolder?.(f);
+                        }}
+                      >
+                        <IconTrash size={13} />
+                      </button>
+                    )}
                   </>
                 ) : (
                   <span style={countStyle}>{f.count}</span>
