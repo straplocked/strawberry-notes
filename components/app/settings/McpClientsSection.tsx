@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 
 const styles: Record<string, CSSProperties> = {
   section: {
@@ -111,10 +111,34 @@ interface ClientTemplate {
 
 const CLIENTS: ClientTemplate[] = [
   {
-    id: 'claude-desktop',
-    title: 'Claude Desktop (macOS / Windows)',
+    id: 'claude-desktop-remote',
+    title: 'Claude Desktop — via mcp-remote (recommended)',
     path:
-      'macOS: ~/Library/Application Support/Claude/claude_desktop_config.json · Windows: %APPDATA%\\Claude\\claude_desktop_config.json',
+      'macOS: ~/Library/Application Support/Claude/claude_desktop_config.json · Linux: ~/.config/Claude/claude_desktop_config.json · Windows: %APPDATA%\\Claude\\claude_desktop_config.json. Uses mcp-remote to wrap the HTTP endpoint as stdio — Desktop builds that re-serialize the config without understanding remote-URL servers will leave this entry alone.',
+    render: (url, token) =>
+      `{
+  "mcpServers": {
+    "strawberry-notes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "${url}",
+        "--header",
+        "Authorization:\${SNB_TOKEN}"
+      ],
+      "env": {
+        "SNB_TOKEN": "Bearer ${token}"
+      }
+    }
+  }
+}`,
+  },
+  {
+    id: 'claude-desktop-url',
+    title: 'Claude Desktop — direct URL (newer builds only)',
+    path:
+      'Some Claude Desktop builds speak MCP Streamable HTTP natively; this is the simplest config for those. If your Desktop drops this entry on restart, use the mcp-remote form above.',
     render: (url, token) =>
       `{
   "mcpServers": {
@@ -166,16 +190,14 @@ curl -s -X POST ${url} \\
 ];
 
 export function McpClientsSection() {
-  const [origin, setOrigin] = useState('');
+  // Lazy initializer — the component is marked 'use client' but may still be
+  // prerendered. Guard against `window` being undefined in that pass.
+  const [origin] = useState(() =>
+    typeof window !== 'undefined' ? window.location.origin : '',
+  );
   const [token, setToken] = useState('');
   const [revealToken, setRevealToken] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setOrigin(window.location.origin);
-    }
-  }, []);
 
   const url = useMemo(() => (origin ? `${origin}/api/mcp` : '/api/mcp'), [origin]);
   const tokenForSnippet = token.trim() || TOKEN_PLACEHOLDER;

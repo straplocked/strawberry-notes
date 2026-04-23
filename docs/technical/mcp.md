@@ -70,7 +70,33 @@ All content I/O uses **Markdown**. The server round-trips through `lib/markdown/
 
 ### Claude Desktop
 
-`~/Library/Application Support/Claude/claude_desktop_config.json`:
+Config location: macOS `~/Library/Application Support/Claude/claude_desktop_config.json` · Linux `~/.config/Claude/claude_desktop_config.json` · Windows `%APPDATA%\Claude\claude_desktop_config.json`.
+
+**Recommended — wrap with `mcp-remote`.** Claude Desktop re-serializes this file on every launch, and several current builds drop entries whose shape they don't recognise (remote-URL servers get stripped on Linux/Windows). Wrapping the HTTP endpoint with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) presents it as stdio, which Desktop preserves:
+
+```json
+{
+  "mcpServers": {
+    "strawberry-notes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://notes.example.com/api/mcp",
+        "--header",
+        "Authorization:${SNB_TOKEN}"
+      ],
+      "env": {
+        "SNB_TOKEN": "Bearer snb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    }
+  }
+}
+```
+
+`mcp-remote` substitutes `${SNB_TOKEN}` from `env` into the `Authorization` header, so the raw token stays out of `args`.
+
+**Direct URL form** — works on builds that speak MCP Streamable HTTP natively; may be silently dropped on others:
 
 ```json
 {
@@ -85,7 +111,7 @@ All content I/O uses **Markdown**. The server round-trips through `lib/markdown/
 }
 ```
 
-Restart Claude Desktop. The Strawberry Notes tools should appear in the tool picker.
+Restart Claude Desktop after editing. The Strawberry Notes tools should appear in the tool picker.
 
 ### Testing with `curl`
 
