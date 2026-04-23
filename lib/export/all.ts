@@ -9,7 +9,7 @@
 
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { and, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { db } from '../db/client';
 import { attachments, folders, noteTags, notes, tags } from '../db/schema';
@@ -183,8 +183,11 @@ async function produceArchive(
   }
 
   // --- 7. Stream each attachment (read from disk) ---------------------------
+  const uploadsBase = resolve(uploadsDir()) + '/';
   for (const e of attachmentEntries) {
-    const full = join(uploadsDir(), e.row.storagePath);
+    const full = resolve(join(uploadsDir(), e.row.storagePath));
+    // Containment check: a corrupt storagePath must not escape uploadsDir().
+    if (!full.startsWith(uploadsBase)) continue;
     const bytes = await readFileIfPresent(full);
     if (bytes === null) {
       // File is missing on disk — record a placeholder so the archive is still
