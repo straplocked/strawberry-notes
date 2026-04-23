@@ -36,6 +36,13 @@
       "when": 1776982166469,
       "tag": "0004_note_links",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776984235306,
+      "tag": "0005_embeddings",
+      "breakpoints": true
     }
   ]
 }

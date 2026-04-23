@@ -13,6 +13,13 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       AUTH_URL: ${AUTH_URL:-http://localhost:3200}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      # Semantic search (optional). Leave EMBEDDING_ENDPOINT empty to disable.
+      # Any provider that speaks OpenAI's `POST /v1/embeddings` shape works
+      # (OpenAI, Ollama, llama.cpp server, LM Studio, vLLM, etc.).
+      EMBEDDING_ENDPOINT: ${EMBEDDING_ENDPOINT:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_DIMS: ${EMBEDDING_DIMS:-1024}
     ports:
       # Host port 3200 chosen to avoid collisions with other local containers
       # (3000 / 3100 were already in use). Override via APP_PORT in .env.
@@ -21,7 +28,12 @@ services:
       - uploads:/data
 
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector bundles the `vector` extension on top of the stock
+    # postgres:16 image — used by the semantic-search feature (drizzle/0005_embeddings.sql).
+    # Operators who do not want the extension can pin `postgres:16-alpine` back;
+    # the migration only runs `CREATE EXTENSION IF NOT EXISTS vector`, so a base
+    # image without `vector` available would fail migration at boot.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: strawberry

@@ -43,7 +43,8 @@ All tools act on the authenticated user. Cross-user access is structurally impos
 | Tool                   | Inputs                                                                                          | Result                                            |
 | ---------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `list_notes`           | `folder?`, `tag?`, `q?`                                                                         | Array of note summaries (id, title, snippet, …). |
-| `search_notes`         | `query`                                                                                         | Same shape as `list_notes`, filtered by FTS.     |
+| `search_notes`         | `query`                                                                                         | Same shape as `list_notes`, filtered by FTS (keyword / exact string). |
+| `search_semantic`      | `query`, `k?` (default 10, max 50)                                                              | Same shape as `list_notes` plus a `score` field (cosine similarity in [0, 1]). Requires an embedding provider (see [deployment.md](deployment.md)); errors cleanly if unset. |
 | `get_note`             | `id`                                                                                            | Full note **as Markdown** plus metadata.          |
 | `create_note`          | `folderId?`, `title?`, `markdown?`, `tagNames?`                                                 | Created note summary.                             |
 | `update_note`          | `id`, `title?`, `markdown?`, `folderId?`, `pinned?`, `tagNames?`, `trashed?`                    | Updated note summary.                             |
@@ -62,7 +63,13 @@ All content I/O uses **Markdown**. The server round-trips through `lib/markdown/
 ### Tool limits
 
 - `list_notes` returns at most 500 rows (same cap as `GET /api/notes`).
+- `search_semantic` returns at most 50 rows (`k` is clamped server-side).
 - `title` max 300 chars, tag name max 40 chars (matches REST validation).
+
+### When should an agent pick `search_semantic` over `search_notes`?
+
+- **`search_notes` (FTS)** — exact strings, filenames, names, short phrases. Fast, zero external dependencies, always available.
+- **`search_semantic`** — conceptual queries ("notes about burnout", "what did I say about pricing", "how did I solve the deploy hang last time"). Only works when the server operator has configured an embedding provider; the tool returns a descriptive error otherwise.
 
 ---
 
