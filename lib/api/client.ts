@@ -37,6 +37,11 @@ export const api = {
         headers: jsonHeaders,
         body: JSON.stringify(input),
       }),
+    patch: (id: string, input: { name?: string; color?: string; position?: number }) =>
+      req<FolderDTO>('PATCH', `/api/folders/${id}`, {
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      }),
     delete: (id: string) =>
       req<{ ok: true }>('DELETE', `/api/folders/${id}`),
   },

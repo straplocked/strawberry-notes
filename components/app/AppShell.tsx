@@ -22,6 +22,7 @@ import {
   useNote,
   useNoteCounts,
   useNotesList,
+  usePatchFolder,
   usePatchNote,
   useTags,
 } from '@/lib/api/hooks';
@@ -63,6 +64,7 @@ export function AppShell() {
   const deleteNote = useDeleteNote();
   const createFolder = useCreateFolder();
   const deleteFolder = useDeleteFolder();
+  const patchFolder = usePatchFolder();
 
   drender('AppShell', {
     view: view.kind,
@@ -95,7 +97,11 @@ export function AppShell() {
       return;
     }
     if (isMobile && mobilePane !== 'editor') return;
-    if (!activeNoteId || !listNotes.some((n) => n.id === activeNoteId)) {
+    // A deliberate null (e.g. after the user deletes/trashes the active note)
+    // is respected — we drop to the editor's empty state instead of yanking
+    // a different note into view. Only auto-pick when the active id points
+    // at something that's been filtered out of the current view.
+    if (activeNoteId && !listNotes.some((n) => n.id === activeNoteId)) {
       dlog('effect', 'AppShell: auto-selecting first note', { id: listNotes[0].id });
       setActiveNoteId(listNotes[0].id);
     }
@@ -242,6 +248,11 @@ export function AppShell() {
     setConfirmState({ kind: 'folder', folder });
   }
 
+  function onRenameFolder(folder: FolderDTO, name: string) {
+    dlog('ui', 'click: rename folder', { id: folder.id, from: folder.name, to: name });
+    patchFolder.mutate({ id: folder.id, patch: { name } });
+  }
+
   function confirmDeleteFolder(folder: FolderDTO) {
     dlog('ui', 'click: delete folder', { id: folder.id, name: folder.name });
     deleteFolder.mutate(folder.id, {
@@ -257,7 +268,7 @@ export function AppShell() {
     if (!activeNote) return;
     dlog('ui', 'click: trash note', { id: activeNote.id });
     patchNote.mutate({ id: activeNote.id, patch: { trashed: true } });
-    if (isMobile) pushMobilePane('list');
+    setActiveNoteId(null);
   }
 
   function onRestoreNote() {
@@ -277,8 +288,8 @@ export function AppShell() {
 
   function confirmDeleteForever(noteId: string) {
     dlog('ui', 'click: delete forever', { id: noteId });
+    if (activeNoteId === noteId) setActiveNoteId(null);
     deleteNote.mutate(noteId);
-    if (isMobile) pushMobilePane('list');
   }
 
   function onTogglePinActive() {
@@ -408,6 +419,7 @@ export function AppShell() {
       density={settings.density}
       onAddFolder={onAddFolder}
       onDeleteFolder={onRequestDeleteFolder}
+      onRenameFolder={onRenameFolder}
       onSignOut={onSignOut}
       onMoveNoteToFolder={onMoveNoteToFolder}
       fullWidth={isMobile}

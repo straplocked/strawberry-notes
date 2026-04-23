@@ -454,6 +454,34 @@ export function useCreateFolder() {
   });
 }
 
+export function usePatchFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: { name?: string; color?: string; position?: number } }) =>
+      api.folders.patch(id, patch),
+    onMutate: async ({ id, patch }) => {
+      dlog('mut', 'patchFolder:onMutate', { id, patch });
+      await qc.cancelQueries({ queryKey: qk.folders });
+      const prevFolders = qc.getQueryData<FolderDTO[]>(qk.folders);
+      qc.setQueryData<FolderDTO[]>(qk.folders, (fs) =>
+        (fs ?? []).map((f) => (f.id === id ? { ...f, ...patch } : f)),
+      );
+      return { prevFolders };
+    },
+    onError: (err, _vars, ctx) => {
+      dlog('mut', 'patchFolder:error', err);
+      if (ctx?.prevFolders) qc.setQueryData(qk.folders, ctx.prevFolders);
+    },
+    onSuccess: (folder) => {
+      dlog('mut', 'patchFolder:success', { id: folder.id });
+      // Server doesn't return `count`; merge with whatever is in cache.
+      qc.setQueryData<FolderDTO[]>(qk.folders, (fs) =>
+        (fs ?? []).map((f) => (f.id === folder.id ? { ...f, ...folder } : f)),
+      );
+    },
+  });
+}
+
 export function useDeleteFolder() {
   const qc = useQueryClient();
   return useMutation({
