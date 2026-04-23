@@ -11,6 +11,7 @@ import {
 import { api } from './client';
 import { dlog, dtime } from '../debug';
 import type {
+  BacklinkDTO,
   FolderDTO,
   FolderView,
   NoteCountsDTO,
@@ -27,6 +28,7 @@ export const qk = {
   counts: ['noteCounts'] as const,
   notesList: (view: FolderView, q: string) => ['notes', folderViewKey(view), q] as const,
   note: (id: string) => ['note', id] as const,
+  backlinks: (id: string) => ['backlinks', id] as const,
 };
 
 /** Derived from how `useNotesList` shapes its filter key. */
@@ -95,6 +97,15 @@ export function useNote(id: string | null) {
     // Prevents the editor from flashing to its empty state while switching notes.
     placeholderData: keepPreviousData,
     staleTime: 10_000,
+  });
+}
+
+export function useBacklinks(id: string | null): UseQueryResult<BacklinkDTO[]> {
+  return useQuery({
+    queryKey: id ? qk.backlinks(id) : ['backlinks', 'none'],
+    queryFn: () => (id ? api.notes.backlinks(id) : Promise.reject(new Error('no id'))),
+    enabled: !!id,
+    staleTime: 30_000,
   });
 }
 
@@ -375,6 +386,12 @@ export function usePatchNote() {
         patch.folderId !== undefined
       ) {
         qc.invalidateQueries({ queryKey: ['notes'] });
+      }
+      // A content or title change can add/remove inbound links to other notes.
+      // Broadcast-invalidate — the backlinks query is only mounted for the
+      // currently-open note, so this is effectively a single refetch.
+      if (patch.content !== undefined || patch.title !== undefined) {
+        qc.invalidateQueries({ queryKey: ['backlinks'] });
       }
     },
   });

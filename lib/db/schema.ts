@@ -142,9 +142,30 @@ export const apiTokens = pgTable(
   }),
 );
 
+// Wiki-style [[Title]] links between notes. `targetId` is null while the target
+// title doesn't resolve to an existing note — when a note is created or its
+// title changes, unresolved rows whose `targetTitle` matches the new title get
+// filled in. `targetTitle` is stored lowercased for case-insensitive matching.
+export const noteLinks = pgTable(
+  'note_links',
+  {
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    targetId: uuid('target_id').references(() => notes.id, { onDelete: 'set null' }),
+    targetTitle: text('target_title').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.sourceId, t.targetTitle] }),
+    targetIdx: index('note_links_target_idx').on(t.targetId),
+    titleIdx: index('note_links_title_idx').on(t.targetTitle),
+  }),
+);
+
 export type User = InferSelectModel<typeof users>;
 export type Folder = InferSelectModel<typeof folders>;
 export type Note = InferSelectModel<typeof notes>;
 export type Tag = InferSelectModel<typeof tags>;
 export type Attachment = InferSelectModel<typeof attachments>;
 export type ApiToken = InferSelectModel<typeof apiTokens>;
+export type NoteLink = InferSelectModel<typeof noteLinks>;

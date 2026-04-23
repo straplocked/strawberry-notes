@@ -8,6 +8,11 @@ import {
   snippetFromDoc,
 } from '../editor/prosemirror-utils';
 import { setNoteTags, upsertTagsByName } from './tag-resolution';
+import {
+  resolvePendingLinksForTitle,
+  syncOutboundLinks,
+  unresolveLinksTo,
+} from './link-service';
 import type { NoteDTO, NoteListItemDTO, PMDoc } from '../types';
 
 export interface ListNotesParams {
@@ -159,6 +164,11 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
     await setNoteTags(n.id, tagIds);
   }
 
+  await syncOutboundLinks(userId, n.id, doc);
+  if (n.title.trim()) {
+    await resolvePendingLinksForTitle(userId, n.id, n.title);
+  }
+
   return {
     id: n.id,
     folderId: n.folderId,
@@ -207,12 +217,24 @@ export async function updateNote(
     .update(notes)
     .set(updates)
     .where(and(eq(notes.id, id), eq(notes.userId, userId)))
-    .returning({ id: notes.id });
+    .returning({ id: notes.id, title: notes.title });
   if (updated.length === 0) return null;
 
   if (patch.tagNames !== undefined) {
     const tagIds = await upsertTagsByName(userId, patch.tagNames);
     await setNoteTags(id, tagIds);
+  }
+
+  if (patch.content !== undefined) {
+    await syncOutboundLinks(userId, id, patch.content);
+  }
+  if (patch.title !== undefined) {
+    // Links that previously matched this note by its old title are invalidated;
+    // rows matching the new title are picked up.
+    await unresolveLinksTo(userId, id);
+    if (updated[0].title.trim()) {
+      await resolvePendingLinksForTitle(userId, id, updated[0].title);
+    }
   }
 
   return getNote(userId, id);

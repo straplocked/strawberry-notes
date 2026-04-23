@@ -12,6 +12,7 @@ import {
   updateNote,
 } from '../notes/service';
 import { createFolder, listFolders } from '../notes/folder-service';
+import { listBacklinks } from '../notes/link-service';
 import { listTags } from '../notes/tag-service';
 
 function textResult(text: string) {
@@ -228,6 +229,16 @@ export function buildMcpServer(userId: string): McpServer {
       if (!ok) return { ...textResult('note not found'), isError: true };
       return jsonResult({ noteId, name });
     },
+  );
+
+  server.registerTool(
+    'get_backlinks',
+    {
+      description:
+        'List notes that link to the given note via a `[[Wiki-style]]` title link. Returns source notes newest-updated first.',
+      inputSchema: { id: z.string().uuid() },
+    },
+    async ({ id }) => jsonResult(await listBacklinks(userId, id)),
   );
 
   server.registerTool(

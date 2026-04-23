@@ -60,6 +60,14 @@ export interface NoteCountsDTO {
   trash: number;
 }
 
+export interface BacklinkDTO {
+  /** The note that contains a `[[Title]]` link pointing at the subject note. */
+  id: string;
+  title: string;
+  snippet: string;
+  updatedAt: string;
+}
+
 export function folderViewKey(v: FolderView): string {
   switch (v.kind) {
     case 'all':
