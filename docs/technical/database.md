@@ -54,6 +54,14 @@ Indexes:
 - `notes_user_folder_idx` on `(userId, folderId, updatedAt)` — folder view.
 - `notes_user_pinned_idx` on `(userId, pinned, updatedAt)` — pinned view.
 - FTS: see [Full-text search](#full-text-search) below.
+- `notes_content_embedding_idx` — IVFFlat on `content_embedding` with `vector_cosine_ops`. See [Semantic search](#semantic-search) below. Optional; only populated when the feature is configured.
+
+Additional columns (`0004_embeddings.sql`):
+
+| Column              | Type            | Notes                                                         |
+| ------------------- | --------------- | ------------------------------------------------------------- |
+| `content_embedding` | `vector(N)`     | Populated by the in-process embedding worker. N = `EMBEDDING_DIMS`. |
+| `embedding_stale`   | `boolean`       | True until the worker has embedded the current content. Set on every content or title edit. |
 
 ### `tags`
 
@@ -112,6 +120,9 @@ Generated into `drizzle/`:
 
 - `0000_nebulous_colonel_america.sql` — base schema.
 - `0001_fts.sql` — full-text search setup.
+- `0002_api_tokens.sql` — personal access tokens.
+- `0003_perf_columns.sql` — precomputed snippet + has-image columns.
+- `0004_embeddings.sql` — pgvector extension, `content_embedding` column, IVFFlat index.
 
 Workflow:
 
@@ -134,6 +145,20 @@ In production, the Docker entrypoint (`docker/entrypoint.sh`) runs `drizzle-kit 
 `0001_fts.sql` adds Postgres `tsvector` + `websearch_to_tsquery` support over `notes.title` and `notes.contentText`. The list endpoint (`app/api/notes/route.ts`) uses FTS when a `q` parameter is provided, with an `ILIKE` fallback for very short queries. Results are always scoped to the requesting user and exclude `trashedAt IS NOT NULL` unless the caller explicitly asks for the trash view.
 
 The 500-item list cap is hardcoded in that route handler — raise it there if needed; Postgres handles far more comfortably.
+
+---
+
+## Semantic Search
+
+`0004_embeddings.sql` enables the `vector` extension (from the `pgvector/pgvector:pg16` image) and adds a `content_embedding vector(N)` column plus an IVFFlat cosine index.
+
+- **Population path.** `lib/notes/service.ts` sets `embedding_stale = true` on every content or title edit and calls `kickEmbeddingWorker()`. The worker (`lib/embeddings/worker.ts`) pulls up to 16 stale rows with `SELECT … FOR UPDATE SKIP LOCKED`, embeds them via the OpenAI-compatible client, and writes the vectors back.
+- **Safe under N replicas.** `SKIP LOCKED` means two replicas pulling concurrently never collide; each row is processed exactly once.
+- **Query path.** `POST /api/notes/search/semantic` and the `search_semantic` MCP tool both call `semanticSearch()` in `lib/embeddings/search.ts`, which embeds the query then runs `ORDER BY content_embedding <=> $vec LIMIT k`, returning a `score = 1 - distance` per row.
+- **Graceful when unconfigured.** `EMBEDDING_ENDPOINT` empty → worker is a no-op, search returns 503 / `isError: true`. Nothing else is affected.
+- **Backfill.** `npm run db:embed` (wraps `scripts/embed-backfill.ts`) drains every stale row in batches. Safe to run while the app is live.
+
+See [deployment.md](deployment.md#semantic-search-optional) for the operator-facing env vars and re-embed procedure.
 
 ---
 

@@ -52,7 +52,7 @@ This means a fresh `docker compose up` on an empty DB volume boots into a fully-
 
 ### `postgres`
 
-- `postgres:16-alpine`.
+- `pgvector/pgvector:pg16` — stock Postgres 16 plus the `vector` extension, needed by semantic search. Drop-in compatible on an existing `pgdata` volume (the data directory layout is identical).
 - User `strawberry`, password from `POSTGRES_PASSWORD` (default `strawberry`).
 - Volume `pgdata:/var/lib/postgresql/data`.
 - Health check: `pg_isready`.
@@ -77,15 +77,32 @@ Required:
 
 Optional (with defaults):
 
-| Var               | Default                      | Purpose                                      |
-| ----------------- | ---------------------------- | -------------------------------------------- |
-| `AUTH_URL`        | `http://localhost:3200`      | Public URL; Auth.js uses it for callbacks.   |
-| `APP_PORT`        | `3200`                       | Host port mapping (container stays at 3000). |
-| `UPLOAD_DIR`      | `./data/uploads`             | Where attachments land on disk.              |
-| `MAX_UPLOAD_MB`   | `10`                         | Per-file upload cap.                         |
+| Var                 | Default                    | Purpose                                      |
+| ------------------- | -------------------------- | -------------------------------------------- |
+| `AUTH_URL`          | `http://localhost:3200`    | Public URL; Auth.js uses it for callbacks.   |
+| `APP_PORT`          | `3200`                     | Host port mapping (container stays at 3000). |
+| `UPLOAD_DIR`        | `./data/uploads`           | Where attachments land on disk.              |
+| `MAX_UPLOAD_MB`     | `10`                       | Per-file upload cap.                         |
 | `POSTGRES_PASSWORD` | `strawberry`               | Compose default DB password.                 |
+| `EMBEDDING_ENDPOINT`| *(unset)*                  | OpenAI-compatible base URL (`/v1`). Enables semantic search when set. |
+| `EMBEDDING_MODEL`   | *(unset)*                  | Model id, e.g. `text-embedding-3-small`.     |
+| `EMBEDDING_API_KEY` | *(unset)*                  | Bearer token for the provider. Optional for local providers. |
+| `EMBEDDING_DIMS`    | `1024`                     | Vector dim the `notes.content_embedding` column was provisioned for. Must match the provider's output dim. |
 
 `.env.example` at the repo root documents the full set — copy it to `.env` before first boot.
+
+### Semantic search (optional)
+
+Leave `EMBEDDING_ENDPOINT` empty to run without semantic search; `/api/notes/search/semantic` and the `search_semantic` MCP tool will return a clear "not configured" error, and everything else works unchanged.
+
+To enable:
+
+1. Pick a provider that speaks `POST /v1/embeddings` (OpenAI, Ollama, llama.cpp server, LM Studio, vLLM, …).
+2. Pick a model and note its output dim. `EMBEDDING_DIMS` **must match**, or the column rejects writes.
+3. Set the four env vars, `docker compose up -d`. The migration (`drizzle/0004_embeddings.sql`) enables the `vector` extension and provisions the column on first boot.
+4. Run `npm run db:embed` (locally, against the deployed DB) to backfill existing notes. Fresh writes embed automatically via a lazy in-process worker.
+
+Changing `EMBEDDING_DIMS` or swapping to a model with a different dim is a **destructive re-embed**: drop the index + column and re-run the migration. The old vectors are meaningless under a new dim.
 
 ---
 

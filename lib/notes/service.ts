@@ -7,6 +7,7 @@ import {
   emptyDoc,
   snippetFromDoc,
 } from '../editor/prosemirror-utils';
+import { kickEmbeddingWorker } from '../embeddings/worker';
 import { setNoteTags, upsertTagsByName } from './tag-resolution';
 import {
   resolvePendingLinksForTitle,
@@ -156,6 +157,8 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
       contentText: docToPlainText(doc),
       snippet: snippetFromDoc(doc),
       hasImage: docHasImage(doc),
+      // Fresh rows are always stale until the worker embeds them.
+      embeddingStale: true,
     })
     .returning();
 
@@ -169,6 +172,9 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
   if (n.title.trim()) {
     await resolvePendingLinksForTitle(userId, n.id, n.title);
   }
+
+  // Fire-and-forget: do not block the save path on embedding work.
+  kickEmbeddingWorker();
 
   return {
     id: n.id,
@@ -205,11 +211,19 @@ export async function updateNote(
   if (patch.trashed !== undefined) {
     updates.trashedAt = patch.trashed ? new Date() : null;
   }
-  if (patch.content !== undefined) {
+  // Only the content mutation invalidates the embedding. Title-only and
+  // folder/pinned/tag changes don't need a re-embed.
+  const contentChanged = patch.content !== undefined;
+  if (contentChanged && patch.content !== undefined) {
     updates.content = patch.content;
     updates.contentText = docToPlainText(patch.content);
     updates.snippet = snippetFromDoc(patch.content);
     updates.hasImage = docHasImage(patch.content);
+    updates.embeddingStale = true;
+  }
+  // A title change also affects the embedding input (we prepend the title).
+  if (patch.title !== undefined) {
+    updates.embeddingStale = true;
   }
 
   // Ownership is enforced in the WHERE; returning() tells us whether the row
@@ -236,6 +250,10 @@ export async function updateNote(
     if (updated[0].title.trim()) {
       await resolvePendingLinksForTitle(userId, id, updated[0].title);
     }
+  }
+
+  if (updates.embeddingStale === true) {
+    kickEmbeddingWorker();
   }
 
   return getNote(userId, id);

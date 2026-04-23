@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { docToMarkdown } from '../markdown/to-markdown';
 import { markdownToDoc } from '../markdown/from-markdown';
+import { EmbeddingNotConfiguredError } from '../embeddings/client';
+import { semanticSearch } from '../embeddings/search';
 import {
   addTagToNote,
   createNote,
@@ -55,12 +57,36 @@ export function buildMcpServer(userId: string): McpServer {
   server.registerTool(
     'search_notes',
     {
-      description: 'Full-text search over all non-trashed notes.',
+      description:
+        'Full-text (keyword) search over all non-trashed notes. Good for exact strings, names, filenames, and short queries. For conceptual / meaning-based queries (e.g. "notes about burnout", "things I said about pricing"), prefer `search_semantic`.',
       inputSchema: { query: z.string().min(1) },
     },
     async ({ query }) => {
       const rows = await listNotes(userId, { q: query });
       return jsonResult(rows);
+    },
+  );
+
+  server.registerTool(
+    'search_semantic',
+    {
+      description:
+        'Semantic (vector) search over all non-trashed notes. Prefer this over `search_notes` when the query describes a topic, concept, mood, or question rather than a specific string. Results are ranked by cosine similarity and include a `score` field in [0, 1] (higher = closer). Returns the same note shape as `list_notes`. Errors if the server has no embedding provider configured.',
+      inputSchema: {
+        query: z.string().min(1).max(2000),
+        k: z.number().int().positive().max(50).optional(),
+      },
+    },
+    async ({ query, k }) => {
+      try {
+        const rows = await semanticSearch(userId, query, { k });
+        return jsonResult(rows);
+      } catch (err) {
+        if (err instanceof EmbeddingNotConfiguredError) {
+          return { ...textResult(err.message), isError: true };
+        }
+        throw err;
+      }
     },
   );
 

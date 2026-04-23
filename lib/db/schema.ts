@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -12,6 +13,32 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
+
+/**
+ * pgvector column. The dimensionality is configurable via `EMBEDDING_DIMS`
+ * (see lib/embeddings/client.ts). Changing this value is a destructive
+ * migration — see docs/technical/deployment.md for the re-embed procedure.
+ *
+ * Wire format: the `vector` type in Postgres reads/writes as a text literal
+ * of the form `[0.1,0.2,...]`. We convert Float32Array/number[] → text on the
+ * way in and parse on the way out.
+ */
+const VECTOR_DIMS = Number(process.env.EMBEDDING_DIMS ?? 1024) || 1024;
+
+export const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return `vector(${VECTOR_DIMS})`;
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    // pgvector returns `[1,2,3]`; strip brackets then split.
+    const inner = value.replace(/^\[|\]$/g, '');
+    if (inner.length === 0) return [];
+    return inner.split(',').map(Number);
+  },
+});
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -57,6 +84,11 @@ export const notes = pgTable(
     hasImage: boolean('has_image').notNull().default(false),
     pinned: boolean('pinned').notNull().default(false),
     trashedAt: timestamp('trashed_at', { withTimezone: true }),
+    // Semantic-search columns. `contentEmbedding` is null until the embedding
+    // worker populates it. `embeddingStale` is set to true on every content
+    // edit so the worker can find notes that need (re-)embedding.
+    contentEmbedding: vector('content_embedding'),
+    embeddingStale: boolean('embedding_stale').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
