@@ -13,6 +13,7 @@ import {
   syncOutboundLinks,
   unresolveLinksTo,
 } from './link-service';
+import { deleteAttachmentsForNote } from './gc';
 import type { NoteDTO, NoteListItemDTO, PMDoc } from '../types';
 
 export interface ListNotesParams {
@@ -246,6 +247,11 @@ export async function deleteNote(
   opts: { hard?: boolean } = {},
 ): Promise<boolean> {
   if (opts.hard) {
+    // Clean up attachment files + rows BEFORE deleting the note itself —
+    // once the note row is gone we lose the noteId linkage and the orphan
+    // sweep would have to pick them up on a later run. Doing it here keeps
+    // hard-delete symmetric with the filesystem.
+    await deleteAttachmentsForNote(userId, id);
     const rows = await db
       .delete(notes)
       .where(and(eq(notes.id, id), eq(notes.userId, userId)))

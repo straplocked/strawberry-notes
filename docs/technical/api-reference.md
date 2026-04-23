@@ -117,6 +117,41 @@ Behaviour per file:
 
 Response: `{ imported: <uuid>[] }`.
 
+### `GET /api/export/all.zip`
+
+Streams every note and referenced attachment for the current user as a single
+zip. Used for full backups; symmetric with `POST /api/notes/import` (manifest
+lists every note's zip-relative path).
+
+Query params:
+
+| Param          | Values    | Meaning                                   |
+| -------------- | --------- | ----------------------------------------- |
+| `includeTrash` | `1`       | Include soft-deleted notes in the export. |
+
+Archive layout:
+
+```
+manifest.json                                     — notes[] + attachments[] with paths
+notes/<safeFolderName>/<safeTitle>-<shortId>.md   — YAML frontmatter + Markdown body
+uploads/<safeName>-<shortId>.<ext>                — raw bytes of every referenced image
+```
+
+Notes outside a folder go under `notes/_unfiled/`. Frontmatter fields: `id`,
+`title`, `folderId`, `pinned`, `tagNames`, `createdAt`, `updatedAt`,
+`trashedAt`. Rendered Markdown is produced by `lib/markdown/to-markdown.ts`
+(the same renderer used by per-note export).
+
+Headers:
+- `content-type: application/zip`
+- `content-disposition: attachment; filename="strawberry-notes-<iso>.zip"`
+- `cache-control: no-store`
+
+The archive is produced with a hand-rolled streaming writer
+(`lib/zip/streaming.ts`) — the whole archive is never buffered in memory.
+Individual entries are capped at 4 GiB (non-zip64); single-user workspaces
+are nowhere near that in practice.
+
 ---
 
 ## Folders
@@ -179,6 +214,28 @@ Streams the attachment back.
 - `content-type` comes from the stored `mime`.
 - `cache-control: private, max-age=3600`.
 - `404` if the DB row exists but the file is missing on disk.
+
+### `POST /api/attachments/gc`
+
+Sweep orphaned attachments for the current user. An attachment is orphaned if
+`noteId IS NULL` (never attached, or its note was hard-deleted before the
+attachment-file cleanup existed) or if the referenced note no longer exists.
+Files are unlinked from disk and DB rows are deleted.
+
+Hard-deleting a note now also cleans up its attachments inline, so this
+endpoint is primarily a **catch-up sweep** for workspaces that accumulated
+orphans before the cleanup was added (or for attachments that were uploaded
+but never embedded).
+
+Response:
+
+```json
+{ "removedFiles": 3, "removedRows": 3, "freedBytes": 1048576 }
+```
+
+`removedFiles` counts only files actually unlinked; rows whose on-disk file
+was already missing contribute to `freedBytes` and `removedRows` but not
+`removedFiles`. Safe to run on demand.
 
 ---
 
