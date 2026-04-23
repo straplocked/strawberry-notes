@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/auth/require';
+import { requireUserIdForApi } from '@/lib/auth/require-api';
 import { createFolder, listFolders } from '@/lib/notes/folder-service';
+import { preflight, withCors } from '@/lib/http/cors';
 
-export async function GET() {
-  const a = await requireUserId();
-  if (!a.ok) return a.response;
+/**
+ * GET accepts either a session cookie (browser app) or `Authorization: Bearer <token>`
+ * so programmatic clients such as the browser extension can list folders to
+ * populate a target-folder dropdown.
+ */
+export async function GET(req: Request) {
+  const a = await requireUserIdForApi(req);
+  if (!a.ok) return withCors(req, a.response);
   const out = await listFolders(a.userId);
-  return NextResponse.json(out);
+  return withCors(req, NextResponse.json(out));
 }
 
 const CreateBody = z.object({
@@ -18,6 +25,9 @@ const CreateBody = z.object({
     .default('#e33d4e'),
 });
 
+// POST stays session-only: folder creation is an app-UI action, not part of
+// the extension's surface. Keeping it narrow preserves the existing auth
+// boundary and reduces the CORS attack surface.
 export async function POST(req: Request) {
   const a = await requireUserId();
   if (!a.ok) return a.response;
@@ -27,4 +37,8 @@ export async function POST(req: Request) {
 
   const f = await createFolder(a.userId, parsed.data);
   return NextResponse.json(f);
+}
+
+export function OPTIONS(req: Request) {
+  return preflight(req);
 }

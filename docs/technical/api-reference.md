@@ -106,16 +106,30 @@ Headers:
 
 ### `POST /api/notes/import`
 
-Bulk import Markdown files.
+Import Markdown. Accepts two shapes, picked by the `Content-Type` header:
 
-Request: `multipart/form-data` with one or more `files[]` entries (each a `.md`).
+**`multipart/form-data`** with one or more `files[]` entries (each a `.md`).
+Per file: first `# H1` becomes the title (or filename if absent); body
+parsed via `lib/markdown/from-markdown.ts`; inserted against the current
+user, in no folder. Response: `{ imported: N, ids: <uuid>[] }`.
 
-Behaviour per file:
-- First `# H1` becomes the title. If absent, filename (without extension) is used.
-- Body parsed via `lib/markdown/from-markdown.ts` → PM JSON.
-- Inserted against the current user, placed in no folder.
+**`application/json`** with a single Markdown blob:
 
-Response: `{ imported: <uuid>[] }`.
+```json
+{
+  "markdown": "…",
+  "title": "optional (≤300 chars)",
+  "folderId": "<uuid>|null",
+  "tagNames": ["optional"],
+  "sourceUrl": "optional https://… — prepended as a blockquote"
+}
+```
+
+Used by the browser web-clipper extension (`extension/`). Response:
+`{ imported: 1, ids: [<uuid>], id: <uuid> }`.
+
+Auth: accepts either the session cookie or `Authorization: Bearer <snb_...>`.
+Responds to `OPTIONS` (CORS preflight).
 
 ### `GET /api/export/all.zip`
 
@@ -159,6 +173,10 @@ are nowhere near that in practice.
 ### `GET /api/folders`
 
 All folders for the user, ordered by `position ASC`. Each includes a `count` of non-trashed notes.
+
+Auth: accepts either the session cookie or `Authorization: Bearer <snb_...>`
+(so the web-clipper extension can populate a target-folder dropdown).
+Responds to `OPTIONS` (CORS preflight). `POST` remains session-only.
 
 ### `POST /api/folders`
 
