@@ -88,6 +88,19 @@ Ownership check is per-request; there is no shared-access flow. Even "public" em
   ```bash
   docker compose run --rm -v "$PWD:/backup" app tar -czf /backup/uploads.tgz /data/uploads
   ```
-- **Restore:** extract into the volume before starting the container.
-- **Orphan cleanup:** there is no built-in reaper. To find orphans (files on disk with no DB row, or DB rows with no file), compare `ls -1 /data/uploads | cut -d. -f1` against `SELECT id FROM attachments;`.
+- **Full-workspace backup:** a signed-in user can hit `GET /api/export/all.zip`
+  to download a single archive of every note (as Markdown + YAML frontmatter)
+  plus every referenced image, with a `manifest.json` listing every relative
+  path. See [api-reference.md](api-reference.md#get-apiexportallzip).
+- **Restore:** extract `uploads.tgz` into the volume before starting the
+  container. For the zip export, re-import via `POST /api/notes/import` per
+  note (full symmetric import is a future item).
+- **Orphan cleanup:**
+  - Hard-deleting a note (`DELETE /api/notes/:id`) now unlinks its attached
+    files and drops their DB rows inline.
+  - Attachments that were uploaded but never embedded are still orphaned.
+    `POST /api/attachments/gc` sweeps them for the signed-in user and returns
+    `{ removedFiles, removedRows, freedBytes }`. Safe to run on demand.
+  - To audit by hand: compare `ls -1 /data/uploads | cut -d. -f1` against
+    `SELECT id FROM attachments;`.
 - **Migrating to object storage:** if/when the app outgrows local storage, `storagePath` is the only column to widen. `lib/storage.ts` is small on purpose so it can be swapped for an S3 client without touching the route handlers.
