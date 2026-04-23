@@ -29,7 +29,7 @@ services:
 
   postgres:
     # pgvector/pgvector bundles the `vector` extension on top of the stock
-    # postgres:16 image — used by the semantic-search feature (drizzle/0004_embeddings.sql).
+    # postgres:16 image — used by the semantic-search feature (drizzle/0005_embeddings.sql).
     # Operators who do not want the extension can pin `postgres:16-alpine` back;
     # the migration only runs `CREATE EXTENSION IF NOT EXISTS vector`, so a base
     # image without `vector` available would fail migration at boot.

@@ -6,8 +6,16 @@
  * owns a single timer + in-flight lock so multiple kicks coalesce into one
  * batch.
  *
- * Safe under N replicas: the worker SELECTs stale rows `FOR UPDATE SKIP
- * LOCKED` so two replicas picking up the same batch cooperate naturally.
+ * Concurrency model: the single in-process `inFlight` guard is the correctness
+ * boundary. The SELECT uses `FOR UPDATE SKIP LOCKED` as a cheap hint, but the
+ * lock releases when the surrounding autocommit statement ends — *before* the
+ * embed HTTP call — so it does NOT fully coordinate across replicas. Running
+ * `docker compose up --scale app=N` with N > 1 can therefore re-embed the same
+ * note in each replica; the result converges because the final UPDATE sets the
+ * latest vector and `embedding_stale = false`, but you spend N× the embedding
+ * API budget. Single-replica (the default) is the supported deployment model;
+ * at larger scale run the backfill script (`npm run db:embed`) from one host
+ * and disable the in-process worker with an env guard (follow-up).
  *
  * If embeddings are not configured, the worker is a no-op (no timer armed).
  */
