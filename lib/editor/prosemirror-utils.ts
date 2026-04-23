@@ -76,10 +76,12 @@ export function docHasImage(doc: PMDoc): boolean {
  * (a user-escaped opening bracket) is ignored.
  */
 export function extractWikiLinks(doc: PMDoc): string[] {
-  const pattern = /(^|[^\\])\[\[([^\]\n]{1,200})\]\]/g;
   const out = new Set<string>();
   const walk = (node: PMNode) => {
     if (node.text) {
+      // Construct the regex inside walk so `lastIndex` from one text node does
+      // not bleed into the next sibling — `/g` regexes are stateful.
+      const pattern = /(^|[^\\])\[\[([^\]\n]{1,200})\]\]/g;
       let m: RegExpExecArray | null;
       while ((m = pattern.exec(node.text)) !== null) {
         const title = m[2].trim().toLowerCase();

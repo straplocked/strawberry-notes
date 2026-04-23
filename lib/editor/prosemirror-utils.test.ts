@@ -94,4 +94,17 @@ describe('extractWikiLinks', () => {
     } as unknown as PMDoc;
     expect(extractWikiLinks(doc)).toEqual(['deep note']);
   });
+
+  it('finds links across sibling text nodes without regex state bleed', () => {
+    // Regression: a stateful `/g` regex hoisted out of the walker would reuse
+    // `lastIndex` across siblings and miss the second link.
+    const doc: PMDoc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'see [[First]]' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'see [[Second]]' }] },
+      ],
+    } as unknown as PMDoc;
+    expect(extractWikiLinks(doc).sort()).toEqual(['first', 'second']);
+  });
 });

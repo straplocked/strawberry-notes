@@ -387,6 +387,12 @@ export function usePatchNote() {
       ) {
         qc.invalidateQueries({ queryKey: ['notes'] });
       }
+      // A content or title change can add/remove inbound links to other notes.
+      // Broadcast-invalidate — the backlinks query is only mounted for the
+      // currently-open note, so this is effectively a single refetch.
+      if (patch.content !== undefined || patch.title !== undefined) {
+        qc.invalidateQueries({ queryKey: ['backlinks'] });
+      }
     },
   });
 }
