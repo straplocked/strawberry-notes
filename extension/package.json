@@ -1,0 +1,22 @@
+{
+  "name": "strawberry-notes-clipper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser extension (Chrome / Firefox MV3) that clips web pages to a Strawberry Notes server as Markdown.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/turndown": "^5.0.6",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "turndown": "^7.2.4"
+  }
+}

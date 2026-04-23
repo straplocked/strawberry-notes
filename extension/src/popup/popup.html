@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Strawberry Notes Clipper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Strawberry Notes</h1>
+        <button type="button" id="toggle-settings" class="ghost" aria-label="Settings">
+          Settings
+        </button>
+      </header>
+
+      <section id="settings" class="panel">
+        <label>
+          <span>Server URL</span>
+          <input id="server-url" type="url" placeholder="https://notes.example.com" autocomplete="off" />
+        </label>
+        <label>
+          <span>Personal access token</span>
+          <input id="token" type="password" placeholder="snb_..." autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="row">
+          <button type="button" id="save-settings" class="primary">Save</button>
+          <button type="button" id="test-connection">Test</button>
+        </div>
+        <p id="settings-status" class="status" aria-live="polite"></p>
+      </section>
+
+      <section id="clip" class="panel">
+        <label>
+          <span>Folder</span>
+          <select id="folder-select">
+            <option value="">— no folder —</option>
+          </select>
+        </label>
+        <label>
+          <span>Tags (comma-separated)</span>
+          <input id="tags" type="text" placeholder="web, research" autocomplete="off" />
+        </label>
+        <div class="row">
+          <button type="button" id="clip-page" class="primary">Clip page</button>
+          <button type="button" id="clip-selection">Clip selection</button>
+        </div>
+        <p id="clip-status" class="status" aria-live="polite"></p>
+      </section>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
