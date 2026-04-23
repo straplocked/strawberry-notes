@@ -104,6 +104,10 @@ function computeTrigger(
   const from = caret - m[0].length;
   if (from < 0) return null;
 
+  // If the char immediately before the opening `[[` is itself `[`, the user
+  // is mid-`[[[`-like sequence — treat as a literal, not a trigger.
+  if (from > blockStart && before[from - blockStart - 1] === '[') return null;
+
   // Popup position is pinned to the `[[` so it doesn't jump as the query grows.
   const coords = view.coordsAtPos(from);
   return { query: partial, from, to: caret, coords };
