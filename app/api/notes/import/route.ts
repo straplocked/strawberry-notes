@@ -1,12 +1,27 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { and, eq } from 'drizzle-orm';
 import { requireUserIdForApi } from '@/lib/auth/require-api';
 import { db } from '@/lib/db/client';
-import { notes } from '@/lib/db/schema';
+import { folders, notes } from '@/lib/db/schema';
 import { markdownToDoc } from '@/lib/markdown/from-markdown';
 import { docToPlainText } from '@/lib/editor/prosemirror-utils';
 import { setNoteTags, upsertTagsByName } from '@/lib/notes/tag-resolution';
 import { preflight, withCors } from '@/lib/http/cors';
+
+/**
+ * Confirm `folderId` (if present) belongs to `userId`. Without this check a
+ * bearer-authenticated request could insert a note into another user's folder
+ * — the FK only checks folder existence, not ownership.
+ */
+async function assertFolderOwned(userId: string, folderId: string | null): Promise<boolean> {
+  if (!folderId) return true;
+  const [f] = await db
+    .select({ id: folders.id })
+    .from(folders)
+    .where(and(eq(folders.id, folderId), eq(folders.userId, userId)));
+  return !!f;
+}
 
 export const runtime = 'nodejs';
 
@@ -60,6 +75,9 @@ async function handleJson(req: Request, userId: string) {
 
   const { markdown, sourceUrl } = parsed.data;
   const folderId = parsed.data.folderId ?? null;
+  if (!(await assertFolderOwned(userId, folderId))) {
+    return NextResponse.json({ error: 'folder not found' }, { status: 404 });
+  }
 
   // Prefer an explicit title; else take the first H1 from the markdown.
   const fromH1 = firstH1(markdown);
@@ -97,6 +115,9 @@ async function handleMultipart(req: Request, userId: string) {
   });
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
   const folderId = parsed.data.folderId ?? null;
+  if (!(await assertFolderOwned(userId, folderId))) {
+    return NextResponse.json({ error: 'folder not found' }, { status: 404 });
+  }
 
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: 'invalid form' }, { status: 400 });

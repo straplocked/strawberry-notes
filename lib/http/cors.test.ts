@@ -14,9 +14,16 @@ describe('cors helper', () => {
     expect(h.Vary).toBe('Origin');
   });
 
-  it('falls back to * when no origin header is present', () => {
+  it('returns null origin when no Origin header is present', () => {
     const req = new Request('https://notes.example.com/api/folders');
-    expect(corsHeaders(req)['Access-Control-Allow-Origin']).toBe('*');
+    expect(corsHeaders(req)['Access-Control-Allow-Origin']).toBe('null');
+  });
+
+  it('rejects arbitrary third-party origins with null', () => {
+    const req = new Request('https://notes.example.com/api/folders', {
+      headers: { origin: 'https://evil.example.com' },
+    });
+    expect(corsHeaders(req)['Access-Control-Allow-Origin']).toBe('null');
   });
 
   it('preflight returns 204 with CORS headers', () => {

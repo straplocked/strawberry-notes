@@ -1,12 +1,10 @@
 /**
  * Minimal CORS helper for the small set of endpoints the browser extension
- * (and other programmatic cross-origin clients) reaches. Intentionally
- * permissive on `Origin` because the access gate is the bearer token, not
- * the origin — tokens are user-issued and revocable.
- *
- * We reflect the caller's origin rather than using `*` so that responses
- * may still carry credentials-like semantics cleanly; callers should send
- * `Authorization: Bearer <token>` (no cookies).
+ * (and other programmatic cross-origin clients) reaches. The primary access
+ * gate is the bearer token, but we still restrict `Access-Control-Allow-Origin`
+ * to the two browser-extension schemes rather than reflecting arbitrary
+ * origins — this keeps third-party web pages from reading responses even if a
+ * bearer token ever leaks to the wrong place.
  *
  * Only wire this into routes that explicitly need cross-origin access
  * (e.g. `/api/folders` GET, `/api/notes/import`). Do NOT apply it blanket.
@@ -16,11 +14,13 @@ import { NextResponse } from 'next/server';
 
 const ALLOWED_METHODS = 'GET, POST, OPTIONS';
 const ALLOWED_HEADERS = 'Authorization, Content-Type';
+const ALLOWED_ORIGIN_RE = /^(chrome-extension|moz-extension|safari-web-extension):\/\/[a-z0-9-]+\/?$/;
 
 export function corsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get('origin') ?? '*';
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGIN_RE.test(origin) ? origin : 'null';
   return {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': allowed,
     'Access-Control-Allow-Methods': ALLOWED_METHODS,
     'Access-Control-Allow-Headers': ALLOWED_HEADERS,
     'Access-Control-Max-Age': '86400',
