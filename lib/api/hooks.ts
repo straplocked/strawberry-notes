@@ -29,6 +29,7 @@ export const qk = {
   notesList: (view: FolderView, q: string) => ['notes', folderViewKey(view), q] as const,
   note: (id: string) => ['note', id] as const,
   backlinks: (id: string) => ['backlinks', id] as const,
+  noteTitles: (q: string) => ['noteTitles', q] as const,
 };
 
 /** Derived from how `useNotesList` shapes its filter key. */
@@ -86,6 +87,24 @@ export function useNotesList(view: FolderView, q: string) {
     // Keep prior list visible while the new filter loads (prevents empty flash).
     placeholderData: keepPreviousData,
     staleTime: 10_000,
+  });
+}
+
+/**
+ * Lightweight typeahead for the editor's `[[` autocomplete. Backed by
+ * `GET /api/notes/titles` — returns up to 20 `{id,title}` pairs filtered by
+ * `q`. `enabled` lets the popup consumer switch the query off while the
+ * popup is closed so we don't fetch eagerly.
+ */
+export function useNoteTitles(q: string, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.noteTitles(q),
+    queryFn: () => api.notes.titles(q),
+    enabled,
+    placeholderData: keepPreviousData,
+    // Titles list changes infrequently — a longer stale window keeps the
+    // popup snappy while the user types.
+    staleTime: 15_000,
   });
 }
 

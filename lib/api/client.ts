@@ -65,6 +65,15 @@ export const api = {
       if (params.q) search.set('q', params.q);
       return req<NoteListItemDTO[]>('GET', `/api/notes?${search.toString()}`);
     },
+    titles: (q: string) => {
+      const search = new URLSearchParams();
+      if (q) search.set('q', q);
+      const qs = search.toString();
+      return req<{ id: string; title: string }[]>(
+        'GET',
+        qs ? `/api/notes/titles?${qs}` : '/api/notes/titles',
+      );
+    },
     get: (id: string) => req<NoteDTO>('GET', `/api/notes/${id}`),
     create: (input: { folderId?: string | null; title?: string; tagNames?: string[] }) =>
       req<NoteDTO>('POST', '/api/notes', {

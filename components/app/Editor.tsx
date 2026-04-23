@@ -6,7 +6,11 @@ import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
 import { Image as ImageExt } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extension-placeholder';
-import { memo, useEffect, useRef, type CSSProperties, type MutableRefObject } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
+import { WikiLinkExtension, type WikiLinkTriggerState } from '@/lib/editor/wiki-link-plugin';
+import { WikiLinkPopup } from './WikiLinkPopup';
+import { useUIStore } from '@/lib/store/ui-store';
+import { api } from '@/lib/api/client';
 import {
   IconAttach,
   IconBold,
@@ -164,6 +168,34 @@ function EditorImpl({
     onChangeTitleRef.current = onChangeTitle;
   });
 
+  // --- Wiki-link autocomplete state ---------------------------------------
+  // Held in React (not ProseMirror state) because the popup is a React tree.
+  // `triggerRef` mirrors the current trigger so the stable `onTriggerChange`
+  // callback can compare without depending on render state.
+  const [wikiTrigger, setWikiTrigger] = useState<WikiLinkTriggerState | null>(null);
+  const wikiKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
+  const setActiveNoteId = useUIStore((s) => s.setActiveNoteId);
+
+  const handleWikiTriggerChange = useCallback((t: WikiLinkTriggerState | null) => {
+    setWikiTrigger(t);
+  }, []);
+
+  const handleWikiLinkClick = useCallback(
+    async (title: string) => {
+      // Resolve the title to a note id using the lightweight titles endpoint.
+      // Exact-match wins; otherwise we fall back to the first result.
+      try {
+        const rows = await api.notes.titles(title);
+        const exact =
+          rows.find((r) => r.title.toLowerCase() === title.toLowerCase()) ?? rows[0];
+        if (exact) setActiveNoteId(exact.id);
+      } catch {
+        /* best-effort — silent failure keeps the editor responsive */
+      }
+    },
+    [setActiveNoteId],
+  );
+
   const resizeTitle = () => {
     const el = titleRef.current;
     if (!el) return;
@@ -179,6 +211,10 @@ function EditorImpl({
         TaskItem.configure({ nested: true }),
         ImageExt,
         Placeholder.configure({ placeholder: 'Start writing…' }),
+        WikiLinkExtension.configure({
+          onTriggerChange: handleWikiTriggerChange,
+          onLinkClick: handleWikiLinkClick,
+        }),
       ],
       content: (note?.content ?? { type: 'doc', content: [{ type: 'paragraph' }] }) as JSONContent,
       editable: !readOnly,
@@ -188,7 +224,26 @@ function EditorImpl({
         // end of the title — treats the title/body gap as a single "line
         // break" that one backspace consumes. A subsequent backspace then
         // deletes a title character via native textarea behaviour.
+        //
+        // Also: when the wiki-link popup is open, forward ArrowUp/Down,
+        // Enter, Tab and Escape into it so the user can navigate results
+        // without leaving the keyboard.
         handleKeyDown(view, event) {
+          const popupHandler = wikiKeyHandlerRef.current;
+          if (
+            popupHandler &&
+            (event.key === 'ArrowDown' ||
+              event.key === 'ArrowUp' ||
+              event.key === 'Enter' ||
+              event.key === 'Tab' ||
+              event.key === 'Escape')
+          ) {
+            if (popupHandler(event)) {
+              event.preventDefault();
+              return true;
+            }
+          }
+
           if (
             event.key !== 'Backspace' ||
             event.shiftKey ||
@@ -254,6 +309,29 @@ function EditorImpl({
   useEffect(() => {
     resizeTitle();
   }, [note?.id]);
+
+  // Note: closing the popup on a note switch is handled by the plugin's
+  // `view.destroy()` hook emitting `null` — no React-side effect needed.
+
+  // Replace the `[[partial` at [from..to] with `[[title]]` and close the popup.
+  // The popup passes `id` too (so the caller could also set activeNoteId on
+  // pick) but we intentionally just insert the link — the user chose to link
+  // here, not to navigate away.
+  const pickWikiTitle = useCallback(
+    (title: string) => {
+      if (!editor || !wikiTrigger) return;
+      const insertion = `[[${title}]]`;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from: wikiTrigger.from, to: wikiTrigger.to }, insertion)
+        .run();
+      setWikiTrigger(null);
+    },
+    [editor, wikiTrigger],
+  );
+
+  const dismissWiki = useCallback(() => setWikiTrigger(null), []);
 
   if (!note) {
     if (loading) {
@@ -507,6 +585,15 @@ function EditorImpl({
           {!note.trashedAt && <BacklinksPanel noteId={note.id} />}
         </div>
       </div>
+      {wikiTrigger && (
+        <WikiLinkPopup
+          query={wikiTrigger.query}
+          coords={wikiTrigger.coords}
+          onPick={pickWikiTitle}
+          onDismiss={dismissWiki}
+          keyHandlerRef={wikiKeyHandlerRef}
+        />
+      )}
     </div>
   );
 }
