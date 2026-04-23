@@ -33,6 +33,7 @@ import { countTasks } from '@/lib/editor/prosemirror-utils';
 import { dcount, dlog, drender } from '@/lib/debug';
 import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
 
+import { BacklinksPanel } from './BacklinksPanel';
 import styles from './editor.module.css';
 
 const toolbarStyle: CSSProperties = {
@@ -502,6 +503,8 @@ function EditorImpl({
           />
 
           <EditorContent editor={editor} />
+
+          {!note.trashedAt && <BacklinksPanel noteId={note.id} />}
         </div>
       </div>
     </div>

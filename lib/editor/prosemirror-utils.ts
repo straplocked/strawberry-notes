@@ -68,6 +68,30 @@ export function docHasImage(doc: PMDoc): boolean {
   return found;
 }
 
+/**
+ * Extract wiki-style `[[Title]]` link targets from a doc's text.
+ *
+ * Returns lowercased, trimmed, deduplicated titles. Empty strings are dropped.
+ * Titles cannot contain `]`, newlines, or be longer than 200 chars. `\[[...]`
+ * (a user-escaped opening bracket) is ignored.
+ */
+export function extractWikiLinks(doc: PMDoc): string[] {
+  const pattern = /(^|[^\\])\[\[([^\]\n]{1,200})\]\]/g;
+  const out = new Set<string>();
+  const walk = (node: PMNode) => {
+    if (node.text) {
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(node.text)) !== null) {
+        const title = m[2].trim().toLowerCase();
+        if (title) out.add(title);
+      }
+    }
+    if (node.content) for (const c of node.content) walk(c);
+  };
+  walk(doc as unknown as PMNode);
+  return [...out];
+}
+
 /** Count task items in a doc: { total, done }. */
 export function countTasks(doc: PMDoc): { total: number; done: number } {
   let total = 0;

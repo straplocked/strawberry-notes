@@ -1,5 +1,13 @@
 import { dtime } from '../debug';
-import type { FolderDTO, NoteCountsDTO, NoteDTO, NoteListItemDTO, PMDoc, TagDTO } from '../types';
+import type {
+  BacklinkDTO,
+  FolderDTO,
+  NoteCountsDTO,
+  NoteDTO,
+  NoteListItemDTO,
+  PMDoc,
+  TagDTO,
+} from '../types';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -81,5 +89,6 @@ export const api = {
     remove: (id: string) =>
       req<{ ok: true }>('DELETE', `/api/notes/${id}`),
     exportMarkdown: (id: string) => (window.location.href = `/api/notes/${id}/export.md`),
+    backlinks: (id: string) => req<BacklinkDTO[]>('GET', `/api/notes/${id}/backlinks`),
   },
 };
