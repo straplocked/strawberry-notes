@@ -5,6 +5,38 @@
 
 ---
 
+## Run 4 — 2026-04-24
+
+**Summary:** Repositioned the docs to match v1.2's class-leader shape. The notebook-core "boringly good at being a notebook" framing has been replaced with the **class-leader thesis**: *the self-hosted notebook with a first-class AI + agent interface.* All three audience tiers now surface wiki-links + backlinks, semantic search (pgvector + OpenAI-compatible embeddings), full-workspace ZIP export, attachment GC, the browser web clipper, and the expanded MCP tool set — each with non-bloat justification.
+
+**Files added:**
+
+- `docs/technical/extension.md` — MV3 browser web clipper: layout, Chrome + Firefox install, configure via PAT, clipping flow, server-side integration (CORS allowlist, folder ownership check, `requireUserIdForApi` auth path), security considerations, known gaps.
+
+**Files modified:**
+
+- `docs/leadership/overview.md` — New "Class-Leader Thesis" section with the one-sentence positioning, the five-point differentiator list, and a competitive comparison table (Joplin, Obsidian, Standard Notes, Logseq, Trilium, SilverBullet, HedgeDoc, Notesnook). Positioning table gains axes for search, agent interface, browser integration, backup/portability. Status version bumped to v1.2.
+- `docs/leadership/roadmap.md` — Split history into **v1**, **v1.1 (MCP)**, and **v1.2 (AI-native pivot)** with a dedicated section per slice (wiki-links + backlinks, semantic search, export-all + GC, web clipper, UI polish) and their non-bloat justifications. Candidate list trimmed of everything now shipped; added graph view, nested folders, daily notes, trigram index follow-up, `all.zip` re-import. Non-bloat-line UI-surface rule updated to include the More menu and Settings page.
+- `docs/leadership/tech-stack.md` — New rows in the stack table for pgvector, MCP SDK, in-house ZIP writer, browser extension, embeddings client. Expanded "Why not X?" to cover SQLite, external vector DBs, OpenAI SDK, plugin systems. Risk table gains pgvector, embeddings provider, MCP SDK rows. Security surface section adds token model, CORS allowlist, folder ownership check, path containment.
+- `docs/leadership/README.md` — One-paragraph summary rewritten to lead with the AI-native thesis.
+- `docs/technical/README.md` — Indexed `extension.md`; quick orientation updated for pgvector, in-house wiki-link plugin, embeddings, agent interface.
+- `docs/technical/api-reference.md` — Added `GET /api/notes/:id/backlinks`, `GET /api/notes/titles`, `POST /api/notes/search/semantic`. Updated `POST /api/attachments/gc` to document the 5-minute grace window and path-containment check. `DTO Shapes` section gains `BacklinkDTO` and semantic-search result shape.
+- `docs/technical/mcp.md` — Added `get_backlinks` row to the tool reference table.
+- `docs/technical/editor.md` — Corrected the stale "~412 lines" claim. Added `WikiLinkExtension` to extensions list, `extractWikiLinks` to helpers, and a new **Wiki-Links & Backlinks** section covering the `note_links` table, resolution flow (sync / resolve-pending / unresolve-to), editor rendering (decorations + popup + click handler + `[[[` guard), how backlinks are surfaced (REST, MCP, panel), and the rationale for decoration-only vs a node/mark type.
+- `docs/user/README.md` — What-is-Strawberry-Notes intro now leads with the AI-native bullets (wiki-links + backlinks, semantic search, full ZIP backup, web clipper, MCP) before the notebook core.
+- `docs/user/features.md` — New sections for wiki-links (typing / backlinks / unresolved / renames), semantic search (kept graceful-fallback language), full-workspace ZIP backup, web clipper setup. Updated per-note export to mention the three-dots More menu. `[[` added to keyboard shortcuts. Kept the "what's not here" section accurate.
+- `docs/README.md` — Added thesis callout; quick-link table expanded with overview, roadmap, pgvector, MCP, extension, editor, features.
+- `README.md` (root) — Headline replaced with the class-leader thesis line; Why paragraph rewritten for the AI-native angle; features split into "The notebook core" + "The class-leader differentiators"; architecture list gains pgvector + embeddings + MCP + wiki-link plugin + GC; configuration table gains `EMBEDDING_*` env vars; backup section leads with the one-click ZIP export.
+- `DOC_UPDATE.md` — Run counter 3 → 4; last-run date 2026-04-24.
+
+**Notes:**
+
+- All doc files remain under the 250-line threshold except `api-reference.md` (now ~310 lines), which gains the three new endpoint subsections but stays under the 400-line split threshold. No splits triggered.
+- No code changed in this run — this is a documentation-only refresh to match the shipped v1.2 features (PRs #6–#11).
+- The class-leader positioning is now explicit in six places: root `README.md` headline, `docs/README.md` thesis callout, `leadership/README.md` summary, `leadership/overview.md` "Class-Leader Thesis" section, `leadership/roadmap.md` v1.2 section, and `leadership/tech-stack.md`. A reader landing on any of these paths encounters the thesis within the first screen.
+
+---
+
 ## Run 3 — 2026-04-21
 
 **Summary:** Shipped the MCP server feature. Strawberry Notes now exposes its

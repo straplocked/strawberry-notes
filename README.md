@@ -1,17 +1,20 @@
 # Strawberry Notes
 
-A simple, self-hostable notes app with an Apple Notes feel. Open source, PWA, runs in one Docker container next to Postgres.
+**The self-hosted notebook with a first-class AI + agent interface.**
+MIT-licensed, runs in one Docker container next to Postgres.
 
 ![Strawberry red + leaf green accents, three-pane layout](public/icons/favicon.svg)
 
 ## Why
 
-Because the best note app is the one you own. Strawberry Notes ships the features people actually use — folders, pinned notes, checklists, tags, images, search, markdown export — and nothing else. No AI. No collab. No cloud. Just your notes, on your server.
+Because the best note app is the one you own — and in 2026, "the one you own" has to speak to agents the same way it speaks to you. Strawberry Notes gives you the full notebook (rich text, folders, tags, FTS) *and* the agent-native capabilities that competitors hide behind SaaS logins or paid tiers: wiki-link backlinks, semantic search over your own embeddings endpoint, full-workspace ZIP backup, a Chrome/Firefox web clipper, and a native Model Context Protocol endpoint. No lock-in. No telemetry. No cloud.
 
-## Features (v1)
+## Features
+
+**The notebook core:**
 
 - Multi-user sign-in (email + password)
-- Three-pane Apple-Notes-style layout (folders · list · editor)
+- Three-pane layout (folders · list · editor)
 - Rich text via TipTap: headings, **bold**/*italic*/~~strike~~, bullet and ordered lists, checklists, block quotes, dividers, inline images
 - Drag/paste images — stored as local files on a Docker volume
 - Tags, pinning, folders, soft-delete trash
@@ -20,7 +23,15 @@ Because the best note app is the one you own. Strawberry Notes ships the feature
 - Installable PWA with offline read-only caching
 - Dark/light themes, six accent palettes, density + sidebar toggles
 - Works in one `docker compose up`
-- **MCP server** — connect Claude Desktop or any MCP client to your notes; see [docs/technical/mcp.md](docs/technical/mcp.md)
+
+**The class-leader differentiators:**
+
+- **`[[Wiki-link]]` backlinks** — TipTap autocomplete on `[[`, styled chips, "Linked from N" panel, MCP `get_backlinks` tool. See [docs/technical/editor.md](docs/technical/editor.md).
+- **Semantic search** — pgvector + any OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, vLLM, LM Studio). Ask by meaning. `POST /api/notes/search/semantic` or MCP `search_semantic`.
+- **Full-workspace ZIP export** — one HTTP call returns every note as Markdown + every attachment + a manifest. See `/api/export/all.zip`.
+- **MCP server** — connect Claude Desktop, Cursor, or any MCP-aware client; personal access tokens, SHA-256 at rest. See [docs/technical/mcp.md](docs/technical/mcp.md).
+- **Web clipper** — MV3 Chrome + Firefox extension in [`extension/`](extension/). See [docs/technical/extension.md](docs/technical/extension.md).
+- **Attachment GC** — orphan sweep with a 5-minute grace window keeps your `uploads/` volume honest.
 
 ## Quickstart
 
@@ -66,11 +77,12 @@ Scripts:
 ## Architecture
 
 - **Framework**: Next.js 16 App Router + React 19, TypeScript, Turbopack
-- **Database**: Postgres 16 via [Drizzle ORM](https://orm.drizzle.team)
-- **Auth**: [Auth.js v5](https://authjs.dev) credentials provider (bcrypt, JWT session)
-- **Editor**: [TipTap](https://tiptap.dev) (ProseMirror). Notes are stored as ProseMirror JSON with a flattened-text mirror column for search and snippets.
-- **Search**: Postgres `tsvector` generated column + `websearch_to_tsquery`. No extra service.
-- **File storage**: Local volume at `/data/uploads`, served through an authenticated Next route (ownership checked against the session user).
+- **Database**: Postgres 16 + pgvector 0.8 via [Drizzle ORM](https://orm.drizzle.team). One DB, three query modes (relational / FTS / ANN).
+- **Auth**: [Auth.js v5](https://authjs.dev) credentials provider (bcrypt, JWT session) + personal access tokens (SHA-256) for MCP and the web clipper.
+- **Editor**: [TipTap](https://tiptap.dev) (ProseMirror) with an in-house wiki-link inline-decoration plugin. Notes are stored as ProseMirror JSON with a flattened-text mirror column for search and snippets.
+- **Search**: Postgres `tsvector` + GIN for keyword; pgvector `vector(N)` + IVFFlat for semantic. Optional OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, …).
+- **Agent interface**: `@modelcontextprotocol/sdk` at `/api/mcp`. Every REST operation reflected as an MCP tool.
+- **File storage**: Local volume at `/data/uploads`, served through an authenticated Next route (ownership checked on every GET). Orphan attachment sweep with a 5-minute grace window.
 - **Offline**: Vanilla service worker at `public/sw.js` using stale-while-revalidate for note/folder/tag GETs. Writes require a network — v1 does not queue offline edits.
 - **State**: Zustand for UI state, React Query for server cache.
 
@@ -101,6 +113,12 @@ docker/           Dockerfile + entrypoint
 | `AUTH_URL` | `http://localhost:3200` | Used by Auth.js for callback URLs |
 | `UPLOAD_DIR` | `./data/uploads` | Where attachment files live |
 | `MAX_UPLOAD_MB` | `10` | Per-file upload cap |
+| `EMBEDDING_ENDPOINT` | unset (feature disabled) | OpenAI-compatible `/v1` base URL for semantic search |
+| `EMBEDDING_MODEL` | unset | Embedding model id (e.g. `text-embedding-3-small`) |
+| `EMBEDDING_API_KEY` | unset | Bearer for the embeddings endpoint (optional for local providers) |
+| `EMBEDDING_DIMS` | `1024` | Must match provider output dim and the `vector(N)` column |
+
+Semantic search is fully optional — leave `EMBEDDING_*` unset and the app runs fine; the semantic endpoint returns a clear "not configured" error.
 
 ## Deploying behind a reverse proxy
 
@@ -116,8 +134,11 @@ Remember to set `AUTH_URL=https://notes.example.com` so Auth.js issues correct c
 
 ## Backup
 
-- Database: `docker compose exec postgres pg_dump -U strawberry strawberry > backup.sql`
-- Attachments: `docker run --rm -v strawberry-notes_uploads:/src -v $(pwd):/dst alpine tar czf /dst/uploads.tgz -C /src .`
+Three complementary options:
+
+- **Full workspace as a single ZIP** (simplest): sign in, click the three-dots **More** in the editor → **Export all notes as ZIP**. Or `curl -b cookie localhost:3200/api/export/all.zip -o all.zip`. Contains every note as Markdown + every attachment + a manifest.
+- **Database**: `docker compose exec postgres pg_dump -U strawberry strawberry > backup.sql`
+- **Attachments volume**: `docker run --rm -v strawberry-notes_uploads:/src -v $(pwd):/dst alpine tar czf /dst/uploads.tgz -C /src .`
 
 ## Contributing
 

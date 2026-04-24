@@ -96,6 +96,43 @@ Response: updated `NoteDTO`.
 
 Hard delete. Cascades remove `note_tags` rows; `attachments.noteId` is set to NULL.
 
+### `GET /api/notes/:id/backlinks`
+
+Returns the list of notes that link to this one via a `[[Title]]` wiki-link.
+Implementation: joins `note_links.target_id = :id` with `notes` scoped to the
+current user, newest-updated first, soft-deleted excluded.
+
+Response: `BacklinkDTO[]` (`id`, `title`, `snippet`, `updatedAt`). Capped at 200 rows.
+Empty array is normal when nothing links here.
+
+### `GET /api/notes/titles?q=<prefix>`
+
+Lightweight typeahead used by the editor's `[[` autocomplete popup. Returns up
+to 20 `{id, title}` rows for the current user's live (non-trashed) notes whose
+title matches `q` (case-insensitive substring). Blank `q` returns the most
+recently updated 20. Uses ILIKE — no supporting index in v1.2; see the
+candidates list in [../leadership/roadmap.md](../leadership/roadmap.md) for the
+`pg_trgm` follow-up.
+
+### `POST /api/notes/search/semantic`
+
+Semantic (meaning-based) search over the current user's notes. Requires the
+embedding provider to be configured (see [deployment.md](deployment.md)); returns
+`503 { error: "semantic search not configured" }` otherwise.
+
+Request:
+```json
+{ "query": "what did I decide about pricing", "k": 10 }
+```
+
+`k` defaults to 10, clamped to 50. Auth accepts either the session cookie or
+`Authorization: Bearer <snb_...>`.
+
+Response: array of the usual `NoteListItemDTO` shape with an extra `score` field
+(cosine similarity in `[0, 1]`). Ranking is ANN via pgvector's IVFFlat index on
+`notes.content_embedding`; the WHERE still filters by `userId` so cross-user
+neighbours are impossible.
+
 ### `GET /api/notes/:id/export.md`
 
 Returns the note serialised to Markdown (via `lib/markdown/to-markdown.ts`) as an attachment download. Filename is a slug of the title.
@@ -237,8 +274,11 @@ Streams the attachment back.
 
 Sweep orphaned attachments for the current user. An attachment is orphaned if
 `noteId IS NULL` (never attached, or its note was hard-deleted before the
-attachment-file cleanup existed) or if the referenced note no longer exists.
-Files are unlinked from disk and DB rows are deleted.
+attachment-file cleanup existed) *and it is older than 5 minutes* — the grace
+window keeps freshly-uploaded-but-not-yet-saved files safe from the sweep.
+Rows whose referenced note no longer exists are also swept. Files are unlinked
+from disk (with a path-containment check that refuses to touch anything
+outside `UPLOAD_DIR`) and DB rows are deleted.
 
 Hard-deleting a note now also cleans up its attachments inline, so this
 endpoint is primarily a **catch-up sweep** for workspaces that accumulated
@@ -290,3 +330,9 @@ Stateless Streamable HTTP transport for the Model Context Protocol. JSON-RPC 2.0
 ## DTO Shapes
 
 Canonical TypeScript types live in `lib/types.ts`. Client-side hooks (`lib/api/hooks.ts`) and the fetch wrapper (`lib/api/client.ts`) speak these types end-to-end. If you add or change an endpoint, update `lib/types.ts` **and** this file in the same change.
+
+Notable shapes added in v1.2:
+
+- `BacklinkDTO` — `{ id, title, snippet, updatedAt }`. Returned by `GET /api/notes/:id/backlinks`.
+- Semantic search result — `NoteListItemDTO & { score: number }` where `score` is cosine similarity in `[0, 1]`.
+- `{ id, title }[]` — returned by `GET /api/notes/titles` (the typeahead shape; intentionally minimal so a keystroke-per-character popup stays cheap).
