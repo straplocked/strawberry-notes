@@ -35,11 +35,54 @@ Tags and folders are independent — a note can be in a folder *and* have tags.
 
 ---
 
+## Wiki-Links & Backlinks
+
+Link between your notes with `[[Title]]` syntax, just like Obsidian or Logseq — but in a web app you own.
+
+**Typing a link:**
+
+- Type `[[` anywhere in a note. A popup appears with matching note titles.
+- Up/Down arrows to navigate, Enter or Tab to insert, Esc to dismiss.
+- You can also type a title in full — `[[Meal plans]]` resolves automatically on save.
+- Linked text renders as a styled chip (berry accent). Click a chip to jump to that note.
+
+**Backlinks:**
+
+- Under each note you'll see a **"Linked from N"** panel listing every other note that has a `[[...]]` pointing at this one.
+- Click a row to jump there.
+- Backlinks auto-update when you save: add or remove a link in note A and note B's panel reflects it on the next refresh.
+
+**Unresolved links:**
+
+- If you write `[[Trip 2027]]` and no note with that title exists yet, the link is remembered as *unresolved*. The moment you create a note titled "Trip 2027", the link resolves automatically and the backlinks panel on the new note shows where it came from.
+
+**Renaming titles:**
+
+- If you rename a note, existing `[[old title]]` references in other notes stay as literal text — they no longer resolve to this note. Update them or create a new note with the old title to keep the link.
+
+---
+
 ## Search
 
-- The search bar at the top of the middle pane searches titles and body text of every non-trashed note.
-- Uses full-text search (tokenised, typo-tolerant within reason) for queries ≥ 3 chars; falls back to substring match for shorter queries.
-- Search is always scoped to what you've picked on the left — search within a folder, within a tag, or across all notes.
+Two modes, both scoped to your notes only.
+
+### Full-text search (keyword)
+
+- The search bar at the top of the middle pane searches titles and body text across every non-trashed note.
+- Uses Postgres full-text search for queries ≥ 3 chars, falls back to substring match for shorter queries.
+- Always scoped to your current filter (folder, tag, pinned, all).
+
+### Semantic search (meaning)
+
+When your server administrator has configured an embeddings provider (OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), you can ask questions by meaning instead of keyword:
+
+- "what did I decide about pricing last quarter"
+- "notes about burnout"
+- "how did I solve the deploy hang last time"
+
+Results come back ranked by semantic similarity, with a score. This is especially useful when you can remember the *topic* but not the exact words you wrote.
+
+If your server hasn't configured semantic search, the feature returns a clear "not configured" message and full-text search still works.
 
 ---
 
@@ -48,6 +91,7 @@ Tags and folders are independent — a note can be in a folder *and* have tags.
 - Deleting a note from the editor moves it to **Trash** rather than destroying it.
 - The Trash view lets you restore a note or delete it permanently.
 - Permanent deletion is irreversible (there's no secondary "really trash").
+- Permanently deleting a note also removes its attached images from disk.
 
 Tip: if you're about to delete something you're unsure about, just trash it. It costs nothing to keep around.
 
@@ -67,15 +111,31 @@ Tip: if you're about to delete something you're unsure about, just trash it. It 
 - Supported: PNG, JPEG, WebP, GIF, SVG, AVIF.
 - Per-file size limit depends on your deployment (default 10 MB; ask your admin if it's different).
 - Images are stored on the server and only visible to you. They will not be shared across accounts.
+- When you hard-delete a note, its images are removed from disk automatically.
 
 ---
 
 ## Markdown Export & Import
 
-- **Export:** from a note, use the share / export action to download a `.md` file. Formatting round-trips to standard Markdown.
-- **Import:** you can upload one or more `.md` files. The first top-level `# heading` becomes the note title (filename is used as a fallback).
+### Per-note export
 
-Good for backing up, for migrating in from other tools (Obsidian, Bear, etc.), or for handing a note to someone outside the app.
+From the editor's toolbar, click the three-dots **More** button → **Export this note as Markdown**. You'll get a `.md` file with the note's title as the filename. Formatting round-trips to standard Markdown.
+
+### Markdown import
+
+Use the import flow to upload one or more `.md` files at once. The first top-level `# heading` becomes the note title (filename is used as a fallback).
+
+Good for migrating in from Obsidian, Bear, Joplin, or any editor that exports `.md`.
+
+### Full-workspace ZIP backup
+
+**More → Export all notes as ZIP** downloads a single archive containing:
+
+- Every note as `notes/<folder>/<title>-<id>.md` with YAML frontmatter (id, title, folderId, pinned, tags, timestamps)
+- Every attached image under `uploads/`
+- A `manifest.json` that maps note IDs to paths
+
+This is the complete backup of your data — nothing is left behind. Keep it somewhere safe; you can use it to restore or migrate the whole workspace.
 
 ---
 
@@ -102,9 +162,29 @@ All these are stored per-browser (via `localStorage`), so your phone and laptop 
 
 ---
 
+## Browser Web Clipper
+
+A Chrome + Firefox extension (in the `extension/` directory of the repo) lets you clip any web page into Strawberry Notes with one click.
+
+Quick setup:
+
+1. Build the extension (`cd extension && npm install && npm run build`).
+2. In Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → pick `extension/dist`. In Firefox: `about:debugging` → **Load Temporary Add-on**.
+3. Create a Personal Access Token (**Settings → Personal Access Tokens** in the app).
+4. Click the extension icon, enter your server URL + token, pick a target folder and tags, hit **Save**.
+
+Then, on any page:
+
+- **Clip page** — captures the article/main content as Markdown and posts it as a new note.
+- **Clip selection** — clips only the text you've selected.
+
+A blockquote with the source URL is automatically prepended. See [../technical/extension.md](../technical/extension.md) for the full details.
+
+---
+
 ## Connecting an AI assistant (MCP)
 
-Strawberry Notes speaks the [Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop, Claude Code, Cursor, and other MCP-aware clients can read and write your notes on your behalf.
+Strawberry Notes speaks the [Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop, Claude Code, Cursor, and other MCP-aware clients can read and write your notes on your behalf — and, crucially, do meaning-based search and graph traversal over the same notes.
 
 Quick setup:
 
@@ -112,7 +192,14 @@ Quick setup:
 2. Under **Personal Access Tokens**, create a token and copy it (it's shown once).
 3. Point your MCP client at `https://<your-host>/api/mcp` with `Authorization: Bearer <token>`.
 
-The assistant gains tools to list, search, read, create, update, tag, and export your notes. See [../technical/mcp.md](../technical/mcp.md) for the full tool list and a Claude Desktop config example.
+What the assistant can do:
+
+- **List, search (keyword + semantic), read, create, update notes**
+- **Create folders, add / remove tags**
+- **Traverse backlinks** (`get_backlinks` tool)
+- **Export notes as Markdown**
+
+See [../technical/mcp.md](../technical/mcp.md) for the full tool list and a Claude Desktop config example.
 
 Tokens carry the same access as your password — treat them that way, and revoke any you aren't using.
 
@@ -126,13 +213,14 @@ Standard editor shortcuts are available:
 - `⌘/Ctrl + I` — italic
 - `⌘/Ctrl + K` — (if your browser lets it through) search focus
 - `⌘/Ctrl + Z` / `⌘/Ctrl + Shift + Z` — undo / redo
+- `[[` — trigger the wiki-link autocomplete
 - Markdown-style expansions (`#␣`, `*␣`, `[ ]␣`, `>␣`, etc.)
 
 ---
 
 ## What's Not Here (Yet)
 
-Intentionally absent in v1:
+Intentionally absent:
 
 - Sharing a note with another user
 - Real-time collaboration

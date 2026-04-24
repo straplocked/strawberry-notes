@@ -54,6 +54,7 @@ All tools act on the authenticated user. Cross-user access is structurally impos
 | `list_tags`            | —                                                                                               | Array of tags with counts.                        |
 | `add_tag`              | `noteId`, `name`                                                                                | `{ noteId, tagId }`. Idempotent.                 |
 | `remove_tag`           | `noteId`, `name`                                                                                | `{ noteId, name }`. Idempotent.                  |
+| `get_backlinks`        | `id`                                                                                            | Notes that link to this one via `[[Title]]`, newest-updated first. Useful for graph traversal. |
 | `export_note_markdown` | `id`                                                                                            | Plain Markdown text of the note.                  |
 
 ### Content format
