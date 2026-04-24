@@ -37,6 +37,7 @@ import { countTasks } from '@/lib/editor/prosemirror-utils';
 import { dcount, dlog, drender } from '@/lib/debug';
 import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
 
+import { ActionSheet } from './ActionSheet';
 import { BacklinksPanel } from './BacklinksPanel';
 import styles from './editor.module.css';
 
@@ -175,6 +176,9 @@ function EditorImpl({
   const [wikiTrigger, setWikiTrigger] = useState<WikiLinkTriggerState | null>(null);
   const wikiKeyHandlerRef = useRef<((e: KeyboardEvent) => boolean) | null>(null);
   const setActiveNoteId = useUIStore((s) => s.setActiveNoteId);
+
+  // --- "More" menu --------------------------------------------------------
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const handleWikiTriggerChange = useCallback((t: WikiLinkTriggerState | null) => {
     setWikiTrigger(t);
@@ -514,7 +518,12 @@ function EditorImpl({
               <button style={tbtnStyle()} title="Share" type="button">
                 <IconShare size={15} />
               </button>
-              <button style={tbtnStyle()} title="More" type="button">
+              <button
+                style={tbtnStyle(moreOpen)}
+                title="More"
+                type="button"
+                onClick={() => setMoreOpen(true)}
+              >
                 <IconMore size={15} />
               </button>
               {onTrash && (
@@ -594,6 +603,29 @@ function EditorImpl({
           keyHandlerRef={wikiKeyHandlerRef}
         />
       )}
+      <ActionSheet
+        open={moreOpen}
+        title="Note actions"
+        onClose={() => setMoreOpen(false)}
+        actions={[
+          {
+            id: 'export-md',
+            label: 'Export this note as Markdown',
+            onSelect: () => {
+              setMoreOpen(false);
+              api.notes.exportMarkdown(note.id);
+            },
+          },
+          {
+            id: 'export-all',
+            label: 'Export all notes as ZIP',
+            onSelect: () => {
+              setMoreOpen(false);
+              window.location.href = '/api/export/all.zip';
+            },
+          },
+        ]}
+      />
     </div>
   );
 }
