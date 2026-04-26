@@ -405,6 +405,12 @@ export function usePatchNote() {
       dlog('mut', 'patchNote:success', { id: note.id });
       // Canonicalize the single-note cache with the server's response.
       qc.setQueryData(qk.note(note.id), note);
+      // A tagNames patch may have created brand-new tags (server-side
+      // upsert). Refetch the user's tag library so the new tags show up in
+      // the sidebar cloud, the editor's tag chips, and the autocomplete.
+      if (patch.tagNames !== undefined) {
+        qc.invalidateQueries({ queryKey: qk.tags });
+      }
       // If this patch could have touched folder counts, reconcile with the
       // server. Optimistic math can drift (e.g. moving a note whose single-
       // note cache was never populated), and the folders list is tiny.

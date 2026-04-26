@@ -39,6 +39,7 @@ import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
 
 import { ActionSheet } from './ActionSheet';
 import { BacklinksPanel } from './BacklinksPanel';
+import { TagEditor } from './TagEditor';
 import styles from './editor.module.css';
 
 const toolbarStyle: CSSProperties = {
@@ -130,10 +131,21 @@ const titleStyle: CSSProperties = {
 export interface EditorProps {
   note: NoteDTO | null;
   folder: FolderDTO | null;
+  /** Tags currently attached to the open note. */
   tags: TagDTO[];
+  /**
+   * The user's full tag library — drives the TagEditor's autocomplete.
+   * Optional so legacy callers without it just lose the suggestion list.
+   */
+  availableTags?: TagDTO[];
   onChangeTitle: (t: string) => void;
   onDirty: () => void;
   onTogglePin: () => void;
+  /**
+   * Replace the note's tag membership. Names are lowercase + deduped before
+   * arriving here (the TagEditor handles normalisation).
+   */
+  onChangeTags?: (names: string[]) => void;
   onTrash?: () => void;
   onRestore?: () => void;
   onDeleteForever?: () => void;
@@ -146,9 +158,11 @@ function EditorImpl({
   note,
   folder,
   tags,
+  availableTags,
   onChangeTitle,
   onDirty,
   onTogglePin,
+  onChangeTags,
   onTrash,
   onRestore,
   onDeleteForever,
@@ -563,11 +577,20 @@ function EditorImpl({
                 <IconCheck size={11} style={{ color: 'var(--leaf)' }} /> {taskDone}/{taskTotal}
               </span>
             )}
-            {tagObjs.map((t) => (
-              <span key={t.id} style={tagChipEd}>
-                #{t.name}
-              </span>
-            ))}
+            {onChangeTags && !note.trashedAt ? (
+              <TagEditor
+                value={tagObjs.map((t) => t.name)}
+                available={availableTags ?? tags}
+                onChange={onChangeTags}
+                readOnly={readOnly}
+              />
+            ) : (
+              tagObjs.map((t) => (
+                <span key={t.id} style={tagChipEd}>
+                  #{t.name}
+                </span>
+              ))
+            )}
           </div>
 
           <textarea

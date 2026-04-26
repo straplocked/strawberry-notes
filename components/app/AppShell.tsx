@@ -451,6 +451,7 @@ export function AppShell() {
       note={activeNote}
       folder={activeNoteFolder}
       tags={activeNoteTags}
+      availableTags={tags}
       editorRef={editorRef}
       loading={!!activeNoteId && noteQ.isPending && !noteQ.data}
       onChangeTitle={(title) => {
@@ -464,6 +465,11 @@ export function AppShell() {
         scheduleSave(activeNoteId);
       }}
       onTogglePin={onTogglePinActive}
+      onChangeTags={(tagNames) => {
+        if (!activeNoteId) return;
+        dlog('ui', 'tags: change', { id: activeNoteId, tagNames });
+        patchNote.mutate({ id: activeNoteId, patch: { tagNames } });
+      }}
       onTrash={onTrashNote}
       onRestore={onRestoreNote}
       onDeleteForever={onRequestDeleteForever}
