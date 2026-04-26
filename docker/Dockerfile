@@ -49,7 +49,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/tsx ./node_modules/t
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/esbuild ./node_modules/esbuild
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/get-tsconfig ./node_modules/get-tsconfig
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/resolve-pkg-maps ./node_modules/resolve-pkg-maps
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin/tsx ./node_modules/.bin/tsx
+# Re-create the tsx bin symlink so it resolves sibling files via __dirname.
+# A plain COPY of a symlink dereferences it on most builders, which breaks tsx.
+RUN mkdir -p ./node_modules/.bin \
+ && ln -sf ../tsx/dist/cli.mjs ./node_modules/.bin/tsx \
+ && chown -h nextjs:nodejs ./node_modules/.bin/tsx
 
 COPY --chown=nextjs:nodejs docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
