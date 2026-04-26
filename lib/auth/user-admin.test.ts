@@ -82,23 +82,30 @@ afterEach(() => {
 });
 
 describe('createUser', () => {
-  it('inserts a user, lowercases the email, and seeds a Journal folder', async () => {
+  it('inserts a user, lowercases the email, and seeds a Journal folder + welcome note', async () => {
     state.insertResult = [{ id: 'u-1', email: 'alice@example.com' }];
     const result = await createUser('Alice@Example.com', 'hunter2hunter');
     expect(result).toEqual({ id: 'u-1', email: 'alice@example.com' });
 
-    expect(state.inserts).toHaveLength(2);
+    // Three inserts: user, Journal folder, Welcome note.
+    expect(state.inserts).toHaveLength(3);
     expect(state.inserts[0].table).toBe('users');
     expect(state.inserts[0].values.email).toBe('alice@example.com');
     // Bcrypt hash, not the raw password.
     expect(state.inserts[0].values.passwordHash).not.toBe('hunter2hunter');
     expect(String(state.inserts[0].values.passwordHash).startsWith('$2')).toBe(true);
 
-    expect(state.inserts[1].table).toBe('folders');
+    // The mock labels only the first insert as 'users'; the rest as 'folders'.
+    // Real-world: inserts[1] is folders, inserts[2] is notes. We assert
+    // against the values shape.
     expect(state.inserts[1].values).toMatchObject({
       userId: 'u-1',
       name: 'Journal',
       position: 0,
+    });
+    expect(state.inserts[2].values).toMatchObject({
+      userId: 'u-1',
+      title: 'Welcome to Strawberry Notes',
     });
   });
 

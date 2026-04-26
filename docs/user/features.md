@@ -6,12 +6,21 @@ A guided tour of what you can actually *do*.
 
 ---
 
+## Today (daily notes)
+
+- Click **Today** in the sidebar to open today's note.
+- The first time you click it, a note titled `Daily — YYYY-MM-DD` is created inside a new `Daily` folder. Every subsequent click on the same calendar day opens that same note.
+- The button uses the *server's* local date — handy if you're a single-user deployment, simple if you self-host across time zones.
+- The new note is seeded with an `<h1>` of the date and an empty paragraph; type whatever you like.
+
+---
+
 ## Folders
 
 - Every note can sit in one folder, or in none (the "All notes" view).
 - Folders are yours only — no one else sees them.
 - Each folder has a colour — click it in the sidebar to edit.
-- The "Journal" folder is created automatically on signup; feel free to rename or delete it.
+- The `Journal` folder and a `Welcome to Strawberry Notes` note are created automatically on signup; feel free to rename, delete, or trash them.
 - Deleting a folder **doesn't delete its notes** — they move to "All notes".
 
 ---

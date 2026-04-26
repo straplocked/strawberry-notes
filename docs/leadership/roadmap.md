@@ -91,6 +91,8 @@ Non-bloat: the extension lives in its own directory with its own build chain; ze
 
 The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public-deployment-ready release. Tracked in [.claude/plans/what-features-should-we-nifty-grove.md](../../.claude/plans/what-features-should-we-nifty-grove.md).
 
+### Tier 1 — landed
+
 - `.env.example` at the repo root documenting every supported variable (the README references it; previously missing).
 - **Open-signup gate.** New `ALLOW_PUBLIC_SIGNUP` env (default `false`). Closed instances 404 the `/signup` page and `POST /api/auth/signup`. Operators provision via `npm run user:create`.
 - **Operator CLIs.** `npm run user:create` and `npm run user:reset` (with shared `lib/auth/user-admin.ts` helpers) replace the previous "edit `users.passwordHash` by hand" recovery path.
@@ -98,7 +100,13 @@ The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public
 - **Public-facing README** with a head-to-head comparison table, an explicit maintainer-commitment paragraph, and operator-command index.
 - **Signup, user-admin, rate-limit, and signup-policy** all unit-tested.
 
-Non-bloat justification: zero new runtime deps; one new lib module (`rate-limit.ts`), one new lib module (`user-admin.ts`), two CLI shells in `scripts/`, one env knob, and a 404 branch in two existing routes. Default behaviour with zero config is now *more conservative*, not less.
+### Tier 2 — landed
+
+- **Daily notes.** Sidebar **Today** button + `POST /api/notes/daily` idempotently opens or creates a note titled `Daily — YYYY-MM-DD` under a new `Daily` folder. Implementation in `lib/notes/daily.ts`; reuses the existing note-create + embedding-worker plumbing — zero new deps, ~80 LOC.
+- **Welcome note on first run.** Both signup paths (the public route + `npm run user:create`) now seed a `Welcome to Strawberry Notes` note alongside the `Journal` folder via shared `lib/auth/first-run.ts`. The note doubles as a feature tour for `[[wiki-links]]`, semantic search, MCP, and exports.
+- **PWA polish.** `viewport.themeColor` in `app/layout.tsx` is now a media-query pair so iOS / Android render the correct address-bar colour for the user's light/dark preference.
+
+Non-bloat justification: zero new runtime deps; one new lib module each for `rate-limit`, `user-admin`, `first-run`, and `daily`; two CLI shells in `scripts/`; two env knobs; new routes are pure REST that round-trip through MCP for free in a future tool extension. Default behaviour with zero config is now *more conservative* (signup gated) and *more useful* (Welcome note + Today button) than v1.2.
 
 ---
 
@@ -131,7 +139,7 @@ Compatible with the non-bloat line. Ordered by leverage per unit of code.
 - **Email-based password reset (self-service).** The v1.3 hardening ships an operator-driven CLI (`npm run user:reset`); a self-service flow would still need SMTP config — kept out of v1.3 to avoid the operator burden.
 - **Graph view.** Backlinks already feed a graph — the hard part is layout. Use D3-force or similar client-side only; no server change needed.
 - **Nested folders.** Schema already has `folderId: uuid | null`; nesting adds a `parentId` on `folders`. Tree UI is the hard part.
-- **Daily notes / journal templates.** Small editor extension + a "New daily note" affordance keyed to today's date.
+- **Daily notes / journal templates** — *shipped in v1.3* (Tier 2 above). The remaining v1.3+ candidate is *templating beyond the date-only header* (e.g. customisable per-user templates).
 - **Attachments beyond images.** PDFs, text files, etc. Requires magic-byte sniffing in the upload endpoint (see [../technical/uploads.md](../technical/uploads.md)).
 - **Tag autocomplete / rename UI.** Tags are already modeled; needs UI.
 - **Trigram index on `notes.title`.** Cheap follow-up to the `[[` autocomplete endpoint — use `pg_trgm` GIN for thousands-of-notes vaults. Currently capped by `LIMIT 20`.

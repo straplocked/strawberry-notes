@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   IconAll,
   IconBerry,
+  IconCalendar,
   IconCog,
   IconEdit,
   IconLogout,
@@ -190,6 +191,11 @@ export interface SidebarProps {
   view: FolderView;
   onView: (v: FolderView) => void;
   onNew: () => void;
+  /**
+   * Open or create today's daily note. Optional so the prop can be added
+   * progressively without forcing every consumer to implement it.
+   */
+  onToday?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   density: Density;
@@ -309,6 +315,16 @@ function SidebarImpl(props: SidebarProps) {
             <span>Pinned</span>
             <span style={countStyle}>{props.pinnedCount}</span>
           </div>
+          {props.onToday && (
+            <div
+              style={itemStyle(false, dense)}
+              onClick={props.onToday}
+              title="Open today's daily note"
+            >
+              <IconCalendar size={15} style={{ color: 'var(--ink-3)' }} />
+              <span>Today</span>
+            </div>
+          )}
         </div>
 
         <div style={styles.section}>
