@@ -49,6 +49,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/tsx ./node_modules/t
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/esbuild ./node_modules/esbuild
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/get-tsconfig ./node_modules/get-tsconfig
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/resolve-pkg-maps ./node_modules/resolve-pkg-maps
+# bcryptjs is inlined into the Next.js standalone server bundle (it's small
+# enough to escape the externals trace), so it isn't dropped at
+# /app/node_modules/bcryptjs. The operator CLIs in scripts/ require it via the
+# normal resolver, so copy it in explicitly.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
 # Re-create the tsx bin symlink so it resolves sibling files via __dirname.
 # A plain COPY of a symlink dereferences it on most builders, which breaks tsx.
 RUN mkdir -p ./node_modules/.bin \
