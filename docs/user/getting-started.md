@@ -8,12 +8,29 @@ This page walks you from "I have a URL" to "I'm editing my first note".
 
 ## 1. Create an account
 
+How accounts are created depends on whether the operator has opted in to public signup (`ALLOW_PUBLIC_SIGNUP=true`).
+
+**Open instances (public signup enabled):**
+
 1. Open the app URL (for a default local deploy: `http://localhost:3200`).
 2. On the sign-in page, click **Sign up**.
 3. Enter an email and a password (minimum 8 characters).
 4. Submit the form. You'll land on `/notes` signed in, with a folder called **Journal** already created for you.
 
-There's no email verification step. The account is usable immediately.
+**Closed instances (the default):** the operator runs the CLI and hands you a password.
+
+```bash
+docker compose exec app npm run user:create -- you@example.com
+# prints a generated password (or use: npm run user:create -- you@example.com mypassword)
+```
+
+Sign in at `/login` with that password. There is no email verification step. If you forget your password, the operator runs:
+
+```bash
+docker compose exec app npm run user:reset -- you@example.com
+```
+
+…which prints a fresh password.
 
 ---
 

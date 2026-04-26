@@ -87,6 +87,21 @@ Non-bloat: the extension lives in its own directory with its own build chain; ze
 
 ---
 
+## v1.3 — Public-launch hardening (in progress)
+
+The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public-deployment-ready release. Tracked in [.claude/plans/what-features-should-we-nifty-grove.md](../../.claude/plans/what-features-should-we-nifty-grove.md).
+
+- `.env.example` at the repo root documenting every supported variable (the README references it; previously missing).
+- **Open-signup gate.** New `ALLOW_PUBLIC_SIGNUP` env (default `false`). Closed instances 404 the `/signup` page and `POST /api/auth/signup`. Operators provision via `npm run user:create`.
+- **Operator CLIs.** `npm run user:create` and `npm run user:reset` (with shared `lib/auth/user-admin.ts` helpers) replace the previous "edit `users.passwordHash` by hand" recovery path.
+- **Per-IP / per-user rate limits.** In-process token-bucket limiter (`lib/http/rate-limit.ts`) protects `POST /api/auth/signup` (5/IP/hr), the credentials sign-in callback (10/IP/min), and `POST /api/tokens` (20/user/hr). 429 + `Retry-After` on denial. Single-process scope; operators running multiple replicas should layer an upstream limiter at the proxy.
+- **Public-facing README** with a head-to-head comparison table, an explicit maintainer-commitment paragraph, and operator-command index.
+- **Signup, user-admin, rate-limit, and signup-policy** all unit-tested.
+
+Non-bloat justification: zero new runtime deps; one new lib module (`rate-limit.ts`), one new lib module (`user-admin.ts`), two CLI shells in `scripts/`, one env knob, and a 404 branch in two existing routes. Default behaviour with zero config is now *more conservative*, not less.
+
+---
+
 See [../../CHANGELOG.md](../CHANGELOG.md) for per-doc-refresh history; `git log` for per-code-change history.
 
 ---
@@ -113,7 +128,7 @@ If one of these turns out to be the right call later, it becomes a **new product
 Compatible with the non-bloat line. Ordered by leverage per unit of code.
 
 - **Offline write queue.** Dexie is already installed. Queue edits in IndexedDB while offline and flush on reconnect. Main risk: conflict resolution. Mitigation: last-write-wins at document granularity, same as today.
-- **Password reset self-service.** Email-based reset flow. Requires an SMTP config; that's the main operator burden.
+- **Email-based password reset (self-service).** The v1.3 hardening ships an operator-driven CLI (`npm run user:reset`); a self-service flow would still need SMTP config — kept out of v1.3 to avoid the operator burden.
 - **Graph view.** Backlinks already feed a graph — the hard part is layout. Use D3-force or similar client-side only; no server change needed.
 - **Nested folders.** Schema already has `folderId: uuid | null`; nesting adds a `parentId` on `folders`. Tree UI is the hard part.
 - **Daily notes / journal templates.** Small editor extension + a "New daily note" affordance keyed to today's date.

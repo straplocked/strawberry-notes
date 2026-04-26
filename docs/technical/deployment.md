@@ -77,17 +77,18 @@ Required:
 
 Optional (with defaults):
 
-| Var                 | Default                    | Purpose                                      |
-| ------------------- | -------------------------- | -------------------------------------------- |
-| `AUTH_URL`          | `http://localhost:3200`    | Public URL; Auth.js uses it for callbacks.   |
-| `APP_PORT`          | `3200`                     | Host port mapping (container stays at 3000). |
-| `UPLOAD_DIR`        | `./data/uploads`           | Where attachments land on disk.              |
-| `MAX_UPLOAD_MB`     | `10`                       | Per-file upload cap.                         |
-| `POSTGRES_PASSWORD` | `strawberry`               | Compose default DB password.                 |
-| `EMBEDDING_ENDPOINT`| *(unset)*                  | OpenAI-compatible base URL (`/v1`). Enables semantic search when set. |
-| `EMBEDDING_MODEL`   | *(unset)*                  | Model id, e.g. `text-embedding-3-small`.     |
-| `EMBEDDING_API_KEY` | *(unset)*                  | Bearer token for the provider. Optional for local providers. |
-| `EMBEDDING_DIMS`    | `1024`                     | Vector dim the `notes.content_embedding` column was provisioned for. Must match the provider's output dim. |
+| Var                  | Default                    | Purpose                                      |
+| -------------------- | -------------------------- | -------------------------------------------- |
+| `AUTH_URL`           | `http://localhost:3200`    | Public URL; Auth.js uses it for callbacks.   |
+| `ALLOW_PUBLIC_SIGNUP`| `false`                    | When `false`, `/signup` 404s and accounts are bootstrapped via `npm run user:create`. Set to `true` only on instances where strangers may register. |
+| `APP_PORT`           | `3200`                     | Host port mapping (container stays at 3000). |
+| `UPLOAD_DIR`         | `./data/uploads`           | Where attachments land on disk.              |
+| `MAX_UPLOAD_MB`      | `10`                       | Per-file upload cap.                         |
+| `POSTGRES_PASSWORD`  | `strawberry`               | Compose default DB password.                 |
+| `EMBEDDING_ENDPOINT` | *(unset)*                  | OpenAI-compatible base URL (`/v1`). Enables semantic search when set. |
+| `EMBEDDING_MODEL`    | *(unset)*                  | Model id, e.g. `text-embedding-3-small`.     |
+| `EMBEDDING_API_KEY`  | *(unset)*                  | Bearer token for the provider. Optional for local providers. |
+| `EMBEDDING_DIMS`     | `1024`                     | Vector dim the `notes.content_embedding` column was provisioned for. Must match the provider's output dim. |
 
 `.env.example` at the repo root documents the full set — copy it to `.env` before first boot.
 
@@ -103,6 +104,44 @@ To enable:
 4. Run `npm run db:embed` (locally, against the deployed DB) to backfill existing notes. Fresh writes embed automatically via a lazy in-process worker.
 
 Changing `EMBEDDING_DIMS` or swapping to a model with a different dim is a **destructive re-embed**: drop the index + column and re-run the migration. The old vectors are meaningless under a new dim.
+
+> ⚠️ **Single-replica only.** The in-process embedding worker holds its "currently
+> running?" flag in module memory. Running `docker compose up --scale app=N`
+> with `N > 1` and embeddings enabled will not corrupt data, but each replica
+> will independently re-embed the same notes — you spend `N×` the embedding API
+> budget for no benefit. Either stay at one replica or run the worker out-of-band
+> via `npm run db:embed` from a single host. The constraint is documented in
+> `lib/embeddings/worker.ts`.
+
+---
+
+## Operator commands
+
+Provisioning, password reset, and embedding backfill are run from inside the app container:
+
+```bash
+docker compose exec app npm run user:create -- alice@example.com           # create a user
+docker compose exec app npm run user:create -- alice@example.com hunter2hunter   # …with a chosen password
+docker compose exec app npm run user:reset -- alice@example.com            # reset a user's password
+docker compose exec app npm run db:embed                                   # backfill embeddings
+```
+
+`user:create` and `user:reset` print the new password on stdout (generated when omitted). Hand it to the user out-of-band; existing JWT sessions remain valid through a reset.
+
+---
+
+## Public-launch hardening
+
+If you intend to expose the instance to strangers (or hit Show HN), make sure the following are in place before opening the firewall:
+
+- `AUTH_SECRET` is freshly generated and not the example value.
+- `AUTH_URL` matches the canonical HTTPS URL.
+- TLS is terminated at the reverse proxy.
+- `ALLOW_PUBLIC_SIGNUP` is set deliberately — `false` for invite-only, `true` for open registration. Either is fine; the default is `false`.
+- `X-Forwarded-For` is forwarded by the proxy so the in-process rate limiter can key on real client IPs.
+- An offsite database backup is scheduled (see [Backups](#backups)).
+
+The signup, login, and token-mint endpoints have built-in per-IP / per-user rate limits ([auth.md](auth.md#rate-limiting)). This is defense-in-depth on top of the proxy, not a substitute.
 
 ---
 

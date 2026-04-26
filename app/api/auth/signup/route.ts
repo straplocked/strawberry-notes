@@ -3,13 +3,27 @@ import { hash } from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '@/lib/db/client';
 import { folders, users } from '@/lib/db/schema';
+import { isPublicSignupEnabled } from '@/lib/auth/signup-policy';
+import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 const Body = z.object({
   email: z.string().email(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
+// 5 signups per IP per hour, with a small burst.
+const SIGNUP_LIMIT = { capacity: 5, refillPerSec: 5 / 3600 };
+
 export async function POST(req: Request) {
+  if (!isPublicSignupEnabled()) {
+    // Closed deployment: behave as if the route doesn't exist so we don't
+    // advertise it in error messages.
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  const limit = rateLimit(`signup:${clientIp(req)}`, SIGNUP_LIMIT);
+  if (!limit.ok) return rateLimitResponse(limit);
+
   const raw = await req.json().catch(() => null);
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {

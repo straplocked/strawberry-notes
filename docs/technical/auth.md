@@ -68,6 +68,14 @@ const { userId } = gate;
 
 ## Signup Flow
 
+Public signup is **gated by `ALLOW_PUBLIC_SIGNUP`** (default: `false`). On a closed instance the `/signup` page renders a 404 and `POST /api/auth/signup` returns 404 — accounts are provisioned by the operator from the CLI:
+
+```bash
+docker compose exec app npm run user:create -- alice@example.com
+```
+
+When `ALLOW_PUBLIC_SIGNUP=true`:
+
 1. Client posts email + password to `POST /api/auth/signup`.
 2. Server validates, hashes, inserts `users` row and a default `folders` row ("Journal").
 3. Server returns `{ ok: true, userId }`.
@@ -78,17 +86,39 @@ The two-step (signup → signin) shape exists because Auth.js v5 credentials flo
 
 ---
 
+## Rate Limiting
+
+Auth-adjacent endpoints are protected by a per-process in-memory token-bucket limiter (`lib/http/rate-limit.ts`):
+
+| Endpoint                                | Limit                                        |
+| --------------------------------------- | -------------------------------------------- |
+| `POST /api/auth/signup`                 | 5 per IP per hour, capacity 5                |
+| `POST /api/auth/callback/credentials`   | 10 per IP per minute, capacity 10            |
+| `POST /api/tokens` (issue access token) | 20 per signed-in user per hour, capacity 20  |
+
+Limits are per-process, not global. Operators running multiple replicas should add an upstream limiter at the reverse proxy — this layer is defense-in-depth, not a substitute. The limiter keys on `X-Forwarded-For` first hop, then `X-Real-IP`, then a constant fallback; pass these headers through your proxy.
+
+Denied calls return HTTP 429 with `{ error: "rate_limit_exceeded", retryAfterSec }` and a `Retry-After` header.
+
+---
+
 ## Password Policy
 
-- Minimum 8 characters (enforced server-side).
+- Minimum 8 characters (enforced server-side and by the CLI helpers).
 - No complexity requirements.
 - Hashed with `bcryptjs` at cost 10.
 
-Password reset is **not** implemented in v1. An operator can reset a password by updating `users.passwordHash` directly; generate the hash with:
+There is **no email-based self-service password reset** — the v1 recovery path is operator-driven:
 
 ```bash
-node -e "console.log(require('bcryptjs').hashSync('new-password', 10))"
+docker compose exec app npm run user:reset -- alice@example.com
+# prints a generated password; hand it to the user out-of-band.
+# To set a specific password: npm run user:reset -- alice@example.com newpassword1
 ```
+
+The CLI updates `users.passwordHash` for the matching email; existing JWT sessions remain valid until they expire. The same script is the recommended path for rotating an admin password.
+
+The provisioning helpers live in `lib/auth/user-admin.ts` and are unit-tested; the wrappers in `scripts/create-user.ts` and `scripts/reset-password.ts` are tiny argv → call shells.
 
 ---
 
