@@ -16,7 +16,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:embed": "tsx scripts/embed-backfill.ts"
+    "db:embed": "tsx scripts/embed-backfill.ts",
+    "user:create": "tsx scripts/create-user.ts",
+    "user:reset": "tsx scripts/reset-password.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

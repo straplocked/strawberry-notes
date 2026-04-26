@@ -167,4 +167,29 @@ describe('ZipWriter round-trip', () => {
       expect(new TextDecoder().decode(files.get(`f${i}.txt`)!)).toBe(`body ${i}`);
     }
   });
+
+  // Sanity check that a workspace-sized (1k notes) export round-trips. Skipped
+  // by default because bcrypt + drizzle are slow under jsdom; flip the env to
+  // run it manually:  RUN_ZIP_STRESS=1 npm test -- streaming
+  it.skipIf(!process.env.RUN_ZIP_STRESS)(
+    'round-trips 1000 small entries without corruption',
+    async () => {
+      const writer = new ZipWriter();
+      const stream = writer.stream();
+      const collectP = collect(stream);
+      const COUNT = 1000;
+      for (let i = 0; i < COUNT; i++) {
+        await writer.addFile(`note-${i}.md`, new TextEncoder().encode(`# Note ${i}\n\nBody.`));
+      }
+      await writer.close();
+      const files = unzip(await collectP);
+      expect(files.size).toBe(COUNT);
+      // Spot check a few entries.
+      for (const i of [0, 1, 500, 999]) {
+        expect(new TextDecoder().decode(files.get(`note-${i}.md`)!)).toBe(
+          `# Note ${i}\n\nBody.`,
+        );
+      }
+    },
+  );
 });

@@ -9,6 +9,22 @@ MIT-licensed, runs in one Docker container next to Postgres.
 
 Because the best note app is the one you own — and in 2026, "the one you own" has to speak to agents the same way it speaks to you. Strawberry Notes gives you the full notebook (rich text, folders, tags, FTS) *and* the agent-native capabilities that competitors hide behind SaaS logins or paid tiers: wiki-link backlinks, semantic search over your own embeddings endpoint, full-workspace ZIP backup, a Chrome/Firefox web clipper, and a native Model Context Protocol endpoint. No lock-in. No telemetry. No cloud.
 
+## How it compares
+
+|                              | Strawberry Notes | Obsidian                | Joplin                 | Logseq                 | Trilium     | Blinko     |
+| ---------------------------- | :--------------: | :---------------------: | :--------------------: | :--------------------: | :---------: | :--------: |
+| MIT-licensed                 | ✅               | ❌ proprietary          | ✅ AGPL                 | ✅ AGPL                 | ✅          | ✅         |
+| Self-hostable web app         | ✅               | ⚠ paid Sync/Publish    | ⚠ desktop-first       | ⚠ desktop-first       | ✅          | ✅         |
+| Multi-user (one deployment)  | ✅               | ❌                      | ❌                     | ❌                     | ❌          | ❌         |
+| **MCP server in the box**    | ✅               | ⚠ third-party plugins  | ⚠ third-party plugins | ⚠ third-party plugins | ❌          | ❌         |
+| Semantic search (own embeds) | ✅ pgvector       | ⚠ paid Copilot Plus    | ⚠ plugin              | ⚠ plugin              | ❌          | ✅ RAG      |
+| `[[wiki-link]]` + backlinks  | ✅               | ✅                      | ⚠ plugin              | ✅                      | ⚠ attrs     | ⚠         |
+| Full-workspace ZIP export    | ✅               | manual vault copy      | ✅ JEX                 | manual export          | ✅          | ⚠         |
+| Browser web-clipper          | ✅ MV3           | ✅ official            | ✅ official            | ⚠ community           | ⚠           | ✅         |
+| One `docker compose up`      | ✅               | n/a (desktop)         | ⚠ server is separate  | n/a (desktop)         | ✅          | ✅         |
+
+The differentiation is **not** "more features than Obsidian" — it's that every feature is reachable both by a human *and* by an agent via the same API, and the whole thing fits in a `docker compose up`.
+
 ## Features
 
 **The notebook core:**
@@ -36,13 +52,28 @@ Because the best note app is the one you own — and in 2026, "the one you own" 
 ## Quickstart
 
 ```bash
-cp .env.example .env           # edit AUTH_SECRET (required)
-openssl rand -base64 32        # → paste into AUTH_SECRET
+cp .env.example .env                          # edit AUTH_SECRET (required)
+openssl rand -base64 32                       # → paste into AUTH_SECRET
 docker compose up -d
+docker compose exec app npm run user:create -- you@example.com   # provision yourself
 open http://localhost:3200
 ```
 
-Create an account on the signup page. Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (image attachments).
+The deployment **does not accept public signups by default** — the operator
+provisions accounts with `npm run user:create`. To open registration, set
+`ALLOW_PUBLIC_SIGNUP=true` in `.env`.
+
+Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (image attachments).
+
+### Operator commands
+
+| Task                              | Command                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| Create a user                     | `docker compose exec app npm run user:create -- alice@example.com`         |
+| Reset a forgotten password         | `docker compose exec app npm run user:reset -- alice@example.com`          |
+| Backfill embeddings (after enabling) | `docker compose exec app npm run db:embed`                              |
+| Database backup                   | `docker compose exec postgres pg_dump -U strawberry strawberry > db.sql`   |
+| Workspace backup (per-user ZIP)   | sign in → editor "More" → **Export all notes as ZIP**                      |
 
 ### PWA install
 
@@ -73,6 +104,8 @@ Scripts:
 | `npm run db:generate` | Generate SQL migration from schema changes |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:studio` | Drizzle Studio (visual DB browser) |
+| `npm run user:create` | Provision a new account from the CLI |
+| `npm run user:reset` | Reset a user's password from the CLI |
 
 ## Architecture
 
@@ -93,8 +126,10 @@ app/               Next.js app router (pages + API routes + manifest)
 components/        Sidebar, NoteList, Editor, Tweaks, icon set
 lib/
   auth.ts         Auth.js config + augmented types
+  auth/           Bearer tokens, signup policy, user-admin helpers
   db/             Drizzle schema + client
   editor/         ProseMirror helpers
+  http/           CORS + rate-limit helpers
   markdown/       PM ↔ Markdown round-trip
   notes/          Tag resolution helpers
   store/          Zustand UI store
@@ -102,21 +137,24 @@ lib/
   format.ts       Date formatter ported from the design
 drizzle/          Generated SQL migrations
 docker/           Dockerfile + entrypoint
+scripts/          Operator CLIs (embed-backfill, create-user, reset-password)
 ```
 
 ## Configuration
 
-| Env var | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | — (required) | Postgres connection string |
-| `AUTH_SECRET` | — (required) | 32+ bytes of entropy; signs session cookies |
-| `AUTH_URL` | `http://localhost:3200` | Used by Auth.js for callback URLs |
-| `UPLOAD_DIR` | `./data/uploads` | Where attachment files live |
-| `MAX_UPLOAD_MB` | `10` | Per-file upload cap |
-| `EMBEDDING_ENDPOINT` | unset (feature disabled) | OpenAI-compatible `/v1` base URL for semantic search |
-| `EMBEDDING_MODEL` | unset | Embedding model id (e.g. `text-embedding-3-small`) |
-| `EMBEDDING_API_KEY` | unset | Bearer for the embeddings endpoint (optional for local providers) |
-| `EMBEDDING_DIMS` | `1024` | Must match provider output dim and the `vector(N)` column |
+| Env var                | Default                                | Purpose                                                                |
+| ---------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| `DATABASE_URL`         | — (required)                           | Postgres connection string                                             |
+| `AUTH_SECRET`          | — (required)                           | 32+ bytes of entropy; signs session cookies                            |
+| `AUTH_URL`             | `http://localhost:3200`                | Used by Auth.js for callback URLs                                      |
+| `ALLOW_PUBLIC_SIGNUP`  | `false`                                | When `false`, `/signup` 404s and the API rejects new registrations     |
+| `UPLOAD_DIR`           | `./data/uploads`                       | Where attachment files live                                            |
+| `MAX_UPLOAD_MB`        | `10`                                   | Per-file upload cap                                                    |
+| `EMBEDDING_ENDPOINT`   | unset (feature disabled)               | OpenAI-compatible `/v1` base URL for semantic search                   |
+| `EMBEDDING_MODEL`      | unset                                  | Embedding model id (e.g. `text-embedding-3-small`)                     |
+| `EMBEDDING_API_KEY`    | unset                                  | Bearer for the embeddings endpoint (optional for local providers)      |
+| `EMBEDDING_DIMS`       | `1024`                                 | Must match provider output dim and the `vector(N)` column              |
+| `APP_PORT`             | `3200`                                 | Host port published by docker-compose                                  |
 
 Semantic search is fully optional — leave `EMBEDDING_*` unset and the app runs fine; the semantic endpoint returns a clear "not configured" error.
 
@@ -130,7 +168,7 @@ notes.example.com {
 }
 ```
 
-Remember to set `AUTH_URL=https://notes.example.com` so Auth.js issues correct callback URLs.
+Remember to set `AUTH_URL=https://notes.example.com` so Auth.js issues correct callback URLs. Pass `X-Forwarded-For` through your proxy so the in-process rate limiter can key on real client IPs.
 
 ## Backup
 
@@ -139,6 +177,18 @@ Three complementary options:
 - **Full workspace as a single ZIP** (simplest): sign in, click the three-dots **More** in the editor → **Export all notes as ZIP**. Or `curl -b cookie localhost:3200/api/export/all.zip -o all.zip`. Contains every note as Markdown + every attachment + a manifest.
 - **Database**: `docker compose exec postgres pg_dump -U strawberry strawberry > backup.sql`
 - **Attachments volume**: `docker run --rm -v strawberry-notes_uploads:/src -v $(pwd):/dst alpine tar czf /dst/uploads.tgz -C /src .`
+
+## Maintainer commitment
+
+Strawberry Notes is built to be **maintained by one person in a weekend per quarter**.
+That has consequences worth being upfront about:
+
+- Security patches and dependency bumps will land within days for high-severity issues; days-to-weeks otherwise.
+- Feature requests outside the [explicit non-goals](docs/leadership/roadmap.md#explicit-non-goals) are welcome via issues, but the bar is "does this earn its keep against the non-bloat line?" — many won't.
+- There is no SaaS, no telemetry, no email-based password reset (the recovery path is `npm run user:reset`), and no plugin marketplace. These are deliberate scope decisions, not gaps waiting to be filled.
+- The codebase is intentionally small (~8K LOC outside `node_modules`) so a careful reader can hold it in their head. If it grows past that, that's a regression, not a feature.
+
+If those terms work for you, welcome. If not, that's also OK — there are great alternatives in the table above.
 
 ## Contributing
 
