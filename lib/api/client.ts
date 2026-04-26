@@ -99,9 +99,5 @@ export const api = {
       req<{ ok: true }>('DELETE', `/api/notes/${id}`),
     exportMarkdown: (id: string) => (window.location.href = `/api/notes/${id}/export.md`),
     backlinks: (id: string) => req<BacklinkDTO[]>('GET', `/api/notes/${id}/backlinks`),
-    daily: () =>
-      req<{ note: NoteDTO; created: boolean }>('POST', '/api/notes/daily', {
-        headers: jsonHeaders,
-      }),
   },
 };

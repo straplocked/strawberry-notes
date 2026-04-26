@@ -47,10 +47,13 @@ export interface NoteDTO {
   createdAt: string;
 }
 
+export type TimeRange = 'today' | 'yesterday' | 'past7' | 'past30';
+
 export type FolderView =
   | { kind: 'all' }
   | { kind: 'pinned' }
   | { kind: 'trash' }
+  | { kind: 'time'; range: TimeRange }
   | { kind: 'folder'; id: string }
   | { kind: 'tag'; id: string };
 
@@ -74,6 +77,8 @@ export function folderViewKey(v: FolderView): string {
     case 'pinned':
     case 'trash':
       return v.kind;
+    case 'time':
+      return `time:${v.range}`;
     case 'folder':
       return `folder:${v.id}`;
     case 'tag':

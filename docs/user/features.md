@@ -6,12 +6,18 @@ A guided tour of what you can actually *do*.
 
 ---
 
-## Today (daily notes)
+## Time filters
 
-- Click **Today** in the sidebar to open today's note.
-- The first time you click it, a note titled `Daily — YYYY-MM-DD` is created inside a new `Daily` folder. Every subsequent click on the same calendar day opens that same note.
-- The button uses the *server's* local date — handy if you're a single-user deployment, simple if you self-host across time zones.
-- The new note is seeded with an `<h1>` of the date and an empty paragraph; type whatever you like.
+The sidebar's **Time** section filters the note list by when each note was last touched. They behave exactly like a folder view — pick one, the second pane shows the matching notes, sorted newest-touched first.
+
+| Filter           | What it shows                                                                |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **Today**        | Notes you updated today (server's calendar day, since 00:00).                |
+| **Yesterday**    | Notes you updated during the prior calendar day.                             |
+| **Past 7 days**  | Rolling 7-day window from now. Doesn't drop yesterday's notes at midnight.   |
+| **Past 30 days** | Rolling 30-day window from now.                                              |
+
+A brand-new note shows up in **Today** immediately (and in Past 7 / 30) — there's no special "daily note" type. If you want a journal-style daily note, just hit **+** while Today is selected and start typing; it'll be there tomorrow under Yesterday.
 
 ---
 

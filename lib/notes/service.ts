@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, gte, ilike, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { noteTags, notes, tags } from '../db/schema';
 import {
@@ -15,9 +15,19 @@ import {
   unresolveLinksTo,
 } from './link-service';
 import { deleteAttachmentsForNote } from './gc';
+import { isTimeRange, timeRangeBounds, type TimeRange } from './time-range';
 import type { NoteDTO, NoteListItemDTO, PMDoc } from '../types';
 
 export interface ListNotesParams {
+  /**
+   * Folder filter. Special tokens:
+   *   - "all"        — every non-trashed note (default)
+   *   - "pinned"     — pinned non-trashed notes
+   *   - "trash"      — soft-deleted notes only
+   *   - "today" / "yesterday" / "past7" / "past30" — time-range filter on
+   *     `updatedAt`; non-trashed notes only. See `lib/notes/time-range.ts`.
+   *   - any other value is treated as a folder uuid.
+   */
   folder?: string;
   tagId?: string | null;
   q?: string | null;
@@ -45,6 +55,11 @@ export async function listNotes(
     conditions.push(isNotNull(notes.trashedAt));
   } else if (folder === 'all') {
     conditions.push(isNull(notes.trashedAt));
+  } else if (isTimeRange(folder)) {
+    const { from, to } = timeRangeBounds(folder as TimeRange);
+    conditions.push(isNull(notes.trashedAt));
+    conditions.push(gte(notes.updatedAt, from));
+    if (to) conditions.push(lt(notes.updatedAt, to));
   } else {
     conditions.push(eq(notes.folderId, folder));
     conditions.push(isNull(notes.trashedAt));
