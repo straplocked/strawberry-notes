@@ -102,11 +102,11 @@ The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public
 
 ### Tier 2 — landed
 
-- **Daily notes.** Sidebar **Today** button + `POST /api/notes/daily` idempotently opens or creates a note titled `Daily — YYYY-MM-DD` under a new `Daily` folder. Implementation in `lib/notes/daily.ts`; reuses the existing note-create + embedding-worker plumbing — zero new deps, ~80 LOC.
+- **Time-range filters in the sidebar.** New `Time` section with **Today**, **Yesterday**, **Past 7 days**, **Past 30 days** entries that filter the second pane on `notes.updatedAt` — they behave like a folder view, not like a dedicated note. The filter is also exposed on `GET /api/notes?folder=today` etc. and on the MCP `list_notes` tool. Implementation: `lib/notes/time-range.ts` (~40 LOC), one extra branch in `listNotes`. The earlier draft of this slice (a dedicated `Daily` folder + idempotent `POST /api/notes/daily`) was reverted in favour of the filter model — a folder per day is overkill, and a filter composes naturally with sort and search.
 - **Welcome note on first run.** Both signup paths (the public route + `npm run user:create`) now seed a `Welcome to Strawberry Notes` note alongside the `Journal` folder via shared `lib/auth/first-run.ts`. The note doubles as a feature tour for `[[wiki-links]]`, semantic search, MCP, and exports.
 - **PWA polish.** `viewport.themeColor` in `app/layout.tsx` is now a media-query pair so iOS / Android render the correct address-bar colour for the user's light/dark preference.
 
-Non-bloat justification: zero new runtime deps; one new lib module each for `rate-limit`, `user-admin`, `first-run`, and `daily`; two CLI shells in `scripts/`; two env knobs; new routes are pure REST that round-trip through MCP for free in a future tool extension. Default behaviour with zero config is now *more conservative* (signup gated) and *more useful* (Welcome note + Today button) than v1.2.
+Non-bloat justification: zero new runtime deps; one new lib module each for `rate-limit`, `user-admin`, `first-run`, and `time-range`; two CLI shells in `scripts/`; two env knobs; the time filter adds **four** new query-string tokens but no new routes. Default behaviour with zero config is now *more conservative* (signup gated) and *more useful* (Welcome note + time filters) than v1.2.
 
 ---
 
@@ -139,7 +139,7 @@ Compatible with the non-bloat line. Ordered by leverage per unit of code.
 - **Email-based password reset (self-service).** The v1.3 hardening ships an operator-driven CLI (`npm run user:reset`); a self-service flow would still need SMTP config — kept out of v1.3 to avoid the operator burden.
 - **Graph view.** Backlinks already feed a graph — the hard part is layout. Use D3-force or similar client-side only; no server change needed.
 - **Nested folders.** Schema already has `folderId: uuid | null`; nesting adds a `parentId` on `folders`. Tree UI is the hard part.
-- **Daily notes / journal templates** — *shipped in v1.3* (Tier 2 above). The remaining v1.3+ candidate is *templating beyond the date-only header* (e.g. customisable per-user templates).
+- **Time-aware filters** — *shipped in v1.3* (Tier 2 above) as Today / Yesterday / Past 7 / Past 30. Future v1.3+ candidates: a custom-range picker, a per-folder time view that composes time + folder, and a "today's note" template that pre-fills the editor when the user hits **+** while Today is selected.
 - **Attachments beyond images.** PDFs, text files, etc. Requires magic-byte sniffing in the upload endpoint (see [../technical/uploads.md](../technical/uploads.md)).
 - **Tag autocomplete / rename UI.** Tags are already modeled; needs UI.
 - **Trigram index on `notes.title`.** Cheap follow-up to the `[[` autocomplete endpoint — use `pg_trgm` GIN for thousands-of-notes vaults. Currently capped by `LIMIT 20`.

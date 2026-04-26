@@ -72,8 +72,8 @@ function welcomeDoc(): PMDoc {
       ),
       heading(2, 'Next steps'),
       bullets([
-        'Click "Today" in the sidebar to start a daily note.',
-        'Try the keyboard shortcut Cmd/Ctrl-N to create a new note.',
+        'Use the Time section in the sidebar to filter the list to notes you touched Today, Yesterday, or in the Past 7 / 30 days.',
+        'Hit Cmd/Ctrl-N to create a new note. New notes show up in Today immediately.',
         'Type [[ in any note to link to another note by title.',
         'Delete this note when you no longer need it.',
       ]),

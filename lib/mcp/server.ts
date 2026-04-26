@@ -37,7 +37,7 @@ export function buildMcpServer(userId: string): McpServer {
     'list_notes',
     {
       description:
-        'List notes belonging to the authenticated user. Use `folder` to filter: "all" (default), "pinned", "trash", or a folder id. Use `tag` for a tag id. Use `q` for full-text search.',
+        'List notes belonging to the authenticated user. Use `folder` to filter: "all" (default), "pinned", "trash", a folder id, or a time-range token ("today", "yesterday", "past7", "past30"). Use `tag` for a tag id. Use `q` for full-text search.',
       inputSchema: {
         folder: z.string().optional(),
         tag: z.string().optional(),

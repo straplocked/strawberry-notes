@@ -19,7 +19,8 @@ import {
 import { ACCENTS, type Density } from '@/lib/design/accents';
 import { drender } from '@/lib/debug';
 import { DRAG_MIME } from '@/lib/dnd';
-import type { FolderDTO, FolderView, TagDTO } from '@/lib/types';
+import { TIME_RANGES, timeRangeLabel } from '@/lib/notes/time-range';
+import type { FolderDTO, FolderView, TagDTO, TimeRange } from '@/lib/types';
 
 const styles: Record<string, CSSProperties> = {
   root: {
@@ -191,11 +192,6 @@ export interface SidebarProps {
   view: FolderView;
   onView: (v: FolderView) => void;
   onNew: () => void;
-  /**
-   * Open or create today's daily note. Optional so the prop can be added
-   * progressively without forcing every consumer to implement it.
-   */
-  onToday?: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   density: Density;
@@ -215,6 +211,8 @@ function SidebarImpl(props: SidebarProps) {
   const isActiveKind = (k: FolderView['kind']) => view.kind === k;
   const isActiveFolder = (id: string) => view.kind === 'folder' && view.id === id;
   const isActiveTag = (id: string) => view.kind === 'tag' && view.id === id;
+  const isActiveTime = (range: TimeRange) =>
+    view.kind === 'time' && view.range === range;
 
   const [adding, setAdding] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -315,16 +313,29 @@ function SidebarImpl(props: SidebarProps) {
             <span>Pinned</span>
             <span style={countStyle}>{props.pinnedCount}</span>
           </div>
-          {props.onToday && (
-            <div
-              style={itemStyle(false, dense)}
-              onClick={props.onToday}
-              title="Open today's daily note"
-            >
-              <IconCalendar size={15} style={{ color: 'var(--ink-3)' }} />
-              <span>Today</span>
-            </div>
-          )}
+        </div>
+
+        <div style={styles.section}>
+          <div style={styles.sectionHead}>
+            <span>Time</span>
+          </div>
+          {TIME_RANGES.map((range) => {
+            const active = isActiveTime(range);
+            return (
+              <div
+                key={range}
+                style={itemStyle(active, dense)}
+                onClick={() => onView({ kind: 'time', range })}
+                title={`Notes updated — ${timeRangeLabel(range)}`}
+              >
+                <IconCalendar
+                  size={15}
+                  style={{ color: active ? 'var(--berry)' : 'var(--ink-3)' }}
+                />
+                <span>{timeRangeLabel(range)}</span>
+              </div>
+            );
+          })}
         </div>
 
         <div style={styles.section}>

@@ -35,6 +35,7 @@ export const qk = {
 /** Derived from how `useNotesList` shapes its filter key. */
 function viewKeyToKind(viewKey: string): FolderView['kind'] | 'folder-or-tag' {
   if (viewKey === 'all' || viewKey === 'pinned' || viewKey === 'trash') return viewKey;
+  if (viewKey.startsWith('time:')) return 'time';
   return 'folder-or-tag';
 }
 
@@ -70,17 +71,30 @@ export function useNoteCounts(): UseQueryResult<NoteCountsDTO> {
   });
 }
 
+/**
+ * Translate a sidebar view into the `folder` URL token the listNotes endpoint
+ * understands. `time` views serialise as the bare range token (e.g. "today")
+ * — see `lib/notes/service.ts` for the full set of recognised values.
+ */
+function viewToFolderParam(view: FolderView): string {
+  switch (view.kind) {
+    case 'folder':
+      return view.id;
+    case 'tag':
+      return 'all'; // tag filter is independent; folder must be "all" to scope
+    case 'time':
+      return view.range;
+    default:
+      return view.kind;
+  }
+}
+
 export function useNotesList(view: FolderView, q: string) {
   return useQuery({
     queryKey: qk.notesList(view, q),
     queryFn: () =>
       api.notes.list({
-        folder:
-          view.kind === 'folder'
-            ? view.id
-            : view.kind === 'tag'
-              ? 'all'
-              : view.kind,
+        folder: viewToFolderParam(view),
         tag: view.kind === 'tag' ? view.id : undefined,
         q: q.trim() || undefined,
       }),
@@ -203,6 +217,12 @@ export function useCreateNote() {
           if (optimistic.folderId !== fid) return;
         }
         if (kind === 'folder-or-tag' && viewKey.startsWith('tag:')) return;
+        if (kind === 'time') {
+          // A brand-new note's updatedAt is "now": always belongs in today /
+          // past7 / past30; never in yesterday.
+          const range = viewKey.slice('time:'.length);
+          if (range === 'yesterday') return;
+        }
         qc.setQueryData(key, sortList([optimistic, ...data]));
       });
 

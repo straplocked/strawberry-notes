@@ -47,15 +47,26 @@ List notes for the current user.
 
 Query params:
 
-| Param     | Values                                 | Meaning                                           |
-| --------- | -------------------------------------- | ------------------------------------------------- |
-| `folder`  | `all` \| `pinned` \| `trash` \| `<uuid>` | Which view. Default `all`.                      |
-| `tag`     | `<uuid>`                               | Filter to notes that carry this tag.              |
-| `q`       | string                                 | FTS query over title + `contentText` (websearch). |
+| Param     | Values                                                                              | Meaning                                                          |
+| --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `folder`  | `all` \| `pinned` \| `trash` \| `today` \| `yesterday` \| `past7` \| `past30` \| `<uuid>` | Which view. Default `all`. Time tokens filter by `updatedAt`. |
+| `tag`     | `<uuid>`                                                                            | Filter to notes that carry this tag.                             |
+| `q`       | string                                                                              | FTS query over title + `contentText` (websearch).                |
 
 - Excludes soft-deleted notes except when `folder=trash`.
 - Orders by `updatedAt DESC` (pinned view: `pinned DESC, updatedAt DESC`).
 - Hard-capped at **500 items**.
+
+Time-range tokens (server-local):
+
+| Token       | Window                                                           |
+| ----------- | ---------------------------------------------------------------- |
+| `today`     | Notes updated since 00:00:00 of the host's current calendar day. |
+| `yesterday` | Notes updated within the prior calendar day (00:00 → 24:00).     |
+| `past7`     | Rolling 7×24h window: `updatedAt >= now() - 7 days`.             |
+| `past30`    | Rolling 30×24h window: `updatedAt >= now() - 30 days`.           |
+
+Implementation lives in `lib/notes/time-range.ts` and is shared with the MCP `list_notes` tool.
 
 Response: `NoteListItemDTO[]` (see `lib/types.ts`).
 
@@ -73,28 +84,6 @@ Request:
 ```
 
 Response: `{ id }` of the new note. Content is initialised to an empty ProseMirror doc.
-
-### `POST /api/notes/daily`
-
-Idempotently open or create today's daily note. Looks up an existing
-non-trashed note titled `Daily — YYYY-MM-DD` (server's local date) for the
-current user; if none exists, creates one inside a `Daily` folder (also
-created on first call with the leaf-green accent).
-
-Request: empty body.
-
-Response:
-```json
-{
-  "note": NoteDTO,
-  "created": true
-}
-```
-
-`created` is `false` when an existing note was returned. The body is the
-new note's pre-populated template (an `<h1>` with the date, then an empty
-paragraph). Implemented in `lib/notes/daily.ts`; the sidebar's **Today**
-button is the primary caller.
 
 ### `GET /api/notes/:id`
 

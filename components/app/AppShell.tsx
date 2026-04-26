@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { useQueryClient } from '@tanstack/react-query';
 import type { Editor as TiptapEditor } from '@tiptap/react';
-import { api } from '@/lib/api/client';
-import { qk } from '@/lib/api/hooks';
+import { timeRangeLabel } from '@/lib/notes/time-range';
 import { Sidebar } from './Sidebar';
 import { NoteList } from './NoteList';
 import { Editor } from './Editor';
@@ -39,7 +37,6 @@ type ConfirmState =
 
 export function AppShell() {
   const router = useRouter();
-  const qc = useQueryClient();
   const {
     view,
     setView,
@@ -161,6 +158,8 @@ export function AppShell() {
         return 'Pinned';
       case 'trash':
         return 'Trash';
+      case 'time':
+        return timeRangeLabel(view.range);
       case 'folder':
         return folders.find((f) => f.id === view.id)?.name ?? 'Folder';
       case 'tag':
@@ -246,29 +245,6 @@ export function AppShell() {
   function onAddFolder(input: { name: string; color: string }) {
     dlog('ui', 'click: add folder', input);
     createFolder.mutate(input);
-  }
-
-  async function onTodayNote() {
-    const t = dtime('ui', 'click: daily note');
-    try {
-      const { note, created } = await api.notes.daily();
-      qc.setQueryData(qk.note(note.id), note);
-      // A new note was inserted (and possibly a new folder) — invalidate the
-      // list and folder queries so counts/contents refresh.
-      if (created) {
-        qc.invalidateQueries({ queryKey: ['notes'] });
-        qc.invalidateQueries({ queryKey: qk.folders });
-        qc.invalidateQueries({ queryKey: qk.counts });
-      }
-      if (note.folderId) {
-        setView({ kind: 'folder', id: note.folderId });
-      }
-      setActiveNoteId(note.id);
-      if (isMobile) pushMobilePane('editor');
-      t.end({ id: note.id, created });
-    } catch (err) {
-      t.end({ error: (err as Error).message });
-    }
   }
 
   function onRequestDeleteFolder(folder: FolderDTO) {
@@ -441,7 +417,6 @@ export function AppShell() {
       view={view}
       onView={onViewFromSidebar}
       onNew={onNewNote}
-      onToday={onTodayNote}
       theme={settings.theme}
       onToggleTheme={() => setTheme(settings.theme === 'dark' ? 'light' : 'dark')}
       density={settings.density}
