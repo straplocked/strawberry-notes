@@ -33,10 +33,14 @@ A brand-new note shows up in **Today** immediately (and in Past 7 / 30) — ther
 
 ## Tags
 
-- Free-form labels. Start typing in a note's tag field and separate with commas.
-- Tags are normalised: lowercased, trimmed, capped at 40 chars, duplicates removed.
-- New tags are created automatically when you use them; no setup needed.
-- The sidebar's Tags section shows a tag cloud with counts. Click a tag to see every note that carries it.
+The chip row above each note's title is also where you tag it.
+
+- **Add a tag.** Click into the `+ tag` slot, type a name, press **Enter** or comma. While typing, an autocomplete dropdown shows existing tags that match — pick one with the mouse or arrow keys + Enter, or commit your typed value to create a new tag.
+- **Remove a tag.** Hover a chip and click the **×** button, or press **Backspace** while the input is empty.
+- **Normalisation.** Names are lowercased, trimmed, capped at 40 characters, and de-duplicated against the rest of the note's tags.
+- **No setup needed.** New tags are created the first time they're used.
+- **Sidebar.** The Tags section shows a cloud with counts. Click a tag to filter the note list to everything that carries it.
+- **Agents.** The same `tagNames` field is exposed on `PATCH /api/notes/:id` and on the MCP `update_note`, `add_tag`, and `remove_tag` tools.
 
 Tags and folders are independent — a note can be in a folder *and* have tags.
 

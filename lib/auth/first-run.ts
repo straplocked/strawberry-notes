@@ -66,6 +66,10 @@ function welcomeDoc(): PMDoc {
       para(
         'Settings → Personal Access Tokens lets you mint a token that Claude Desktop, Claude Code, Cursor, or any MCP client can use to read, search, and write your notes. Same operations as the REST API, exposed as agent tools.',
       ),
+      heading(2, 'Tags'),
+      para(
+        'The chip row above the title is also where you tag this note. Type a name and press Enter (or comma) to add — start typing to autocomplete from your existing tags or create a new one. Hover a chip and click × to remove. Tags drive the sidebar tag cloud and the MCP `add_tag` / `remove_tag` tools.',
+      ),
       heading(2, 'Bring everything home'),
       para(
         'The three-dots More button in the editor exports any single note as Markdown, or the whole workspace (notes + attachments + manifest) as a ZIP. There is no lock-in.',
