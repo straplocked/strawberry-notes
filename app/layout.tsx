@@ -42,7 +42,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#15100f',
+  // Match the user's OS-level light/dark preference on the iOS / Android
+  // address bar and PWA splash. Both colours are the `--bg` token from
+  // app/globals.css for the matching scheme.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#faf5f1' },
+    { media: '(prefers-color-scheme: dark)', color: '#15100f' },
+  ],
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',

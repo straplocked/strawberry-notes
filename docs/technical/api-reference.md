@@ -23,7 +23,8 @@ Request:
 
 - Validates email format and password length (≥ 8).
 - Hashes with `bcryptjs` (cost 10).
-- Inserts `users` row and a default `folders` row named "Journal".
+- Inserts the `users` row, a default `Journal` folder, and a `Welcome to Strawberry Notes` note (via `lib/auth/first-run.ts`).
+- Disabled when `ALLOW_PUBLIC_SIGNUP` is unset / falsy — returns `404` so the route doesn't advertise itself.
 
 Responses:
 - `200` `{ ok: true, userId }`
@@ -72,6 +73,28 @@ Request:
 ```
 
 Response: `{ id }` of the new note. Content is initialised to an empty ProseMirror doc.
+
+### `POST /api/notes/daily`
+
+Idempotently open or create today's daily note. Looks up an existing
+non-trashed note titled `Daily — YYYY-MM-DD` (server's local date) for the
+current user; if none exists, creates one inside a `Daily` folder (also
+created on first call with the leaf-green accent).
+
+Request: empty body.
+
+Response:
+```json
+{
+  "note": NoteDTO,
+  "created": true
+}
+```
+
+`created` is `false` when an existing note was returned. The body is the
+new note's pre-populated template (an `<h1>` with the date, then an empty
+paragraph). Implemented in `lib/notes/daily.ts`; the sidebar's **Today**
+button is the primary caller.
 
 ### `GET /api/notes/:id`
 

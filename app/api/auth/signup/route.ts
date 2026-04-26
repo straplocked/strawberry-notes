@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { hash } from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '@/lib/db/client';
-import { folders, users } from '@/lib/db/schema';
+import { users } from '@/lib/db/schema';
+import { seedFirstRunContent } from '@/lib/auth/first-run';
 import { isPublicSignupEnabled } from '@/lib/auth/signup-policy';
 import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
@@ -41,13 +42,9 @@ export async function POST(req: Request) {
       .values({ email, passwordHash })
       .returning({ id: users.id, email: users.email });
 
-    // First-run: seed a single folder so the empty state isn't empty.
-    await db.insert(folders).values({
-      userId: user.id,
-      name: 'Journal',
-      color: '#e33d4e',
-      position: 0,
-    });
+    // First-run: seed the Journal folder + a Welcome note so the empty
+    // state doubles as a feature tour.
+    await seedFirstRunContent(user.id);
 
     return NextResponse.json({ ok: true, userId: user.id });
   } catch (err) {

@@ -8,7 +8,8 @@
 import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
-import { folders, users } from '../db/schema';
+import { users } from '../db/schema';
+import { seedFirstRunContent } from './first-run';
 
 export class UserAdminError extends Error {
   constructor(
@@ -53,12 +54,7 @@ export async function createUser(
       .values({ email, passwordHash })
       .returning({ id: users.id, email: users.email });
 
-    await db.insert(folders).values({
-      userId: user.id,
-      name: 'Journal',
-      color: '#e33d4e',
-      position: 0,
-    });
+    await seedFirstRunContent(user.id);
 
     return user;
   } catch (err) {

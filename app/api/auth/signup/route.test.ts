@@ -66,14 +66,14 @@ describe('POST /api/auth/signup', () => {
     expect(body.error).toMatch(/8 characters/);
   });
 
-  it('creates the user and seeds a Journal folder on success', async () => {
+  it('creates the user and seeds a Journal folder + Welcome note on success', async () => {
     state.insertResult = [{ id: 'u-1', email: 'a@example.com' }];
     const res = await POST(postJson({ email: 'A@Example.com', password: 'hunter2hunter' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ ok: true, userId: 'u-1' });
-    // Two inserts: user + folder.
-    expect(state.inserts).toBe(2);
+    // Three inserts: user + folder + welcome note (via seedFirstRunContent).
+    expect(state.inserts).toBe(3);
   });
 
   it('returns 409 when the email is already registered', async () => {
