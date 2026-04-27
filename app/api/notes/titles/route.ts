@@ -15,11 +15,10 @@ import { notes } from '@/lib/db/schema';
  * Separate from `GET /api/notes` because that endpoint pulls `snippet`,
  * `tagIds`, `hasImage` etc. — overkill for a keystroke-per-character popup.
  *
- * Perf note: the ILIKE cannot use any existing index. At thousands of notes
- * per user, add `CREATE INDEX notes_title_trgm_idx ON notes USING gin (title
- * gin_trgm_ops);` (requires the `pg_trgm` extension) as a follow-up migration.
- * For typical self-hoster scale (hundreds of notes) the `LIMIT 20` is the only
- * mitigation needed.
+ * Perf: the ILIKE substring scan is backed by a `pg_trgm` GIN index on
+ * `notes.title` (drizzle/0006_title_trgm.sql). Postgres's planner picks the
+ * trigram index automatically once the user has enough notes that the
+ * sequential scan loses, so this stays fast into the thousands per user.
  */
 export async function GET(req: Request) {
   const a = await requireUserId();

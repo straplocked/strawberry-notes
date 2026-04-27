@@ -242,7 +242,7 @@ export function AppShell() {
     );
   }
 
-  function onAddFolder(input: { name: string; color: string }) {
+  function onAddFolder(input: { name: string; color: string; parentId: string | null }) {
     dlog('ui', 'click: add folder', input);
     createFolder.mutate(input);
   }
@@ -258,9 +258,22 @@ export function AppShell() {
 
   function confirmDeleteFolder(folder: FolderDTO) {
     dlog('ui', 'click: delete folder', { id: folder.id, name: folder.name });
+    // Capture the doomed subtree before the mutation removes it from cache,
+    // so we can detect "user was viewing a sub-folder of the one being deleted."
+    const doomed = new Set<string>([folder.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const f of folders) {
+        if (f.parentId && doomed.has(f.parentId) && !doomed.has(f.id)) {
+          doomed.add(f.id);
+          grew = true;
+        }
+      }
+    }
     deleteFolder.mutate(folder.id, {
       onSuccess: () => {
-        if (view.kind === 'folder' && view.id === folder.id) {
+        if (view.kind === 'folder' && doomed.has(view.id)) {
           setView({ kind: 'all' });
         }
       },
@@ -523,7 +536,7 @@ export function AppShell() {
         title="Delete folder?"
         message={
           confirmState?.kind === 'folder'
-            ? `Delete folder "${confirmState.folder.name}"? Notes in this folder will move to All Notes.`
+            ? folderDeleteMessage(confirmState.folder, folders)
             : ''
         }
         confirmLabel="Delete folder"
@@ -573,4 +586,24 @@ function paneWrap(visible: boolean): CSSProperties {
     display: visible ? 'flex' : 'none',
     flexDirection: 'column',
   };
+}
+
+function folderDeleteMessage(target: FolderDTO, all: FolderDTO[]): string {
+  const childIds = new Set<string>([target.id]);
+  // Walk descendants iteratively — the folder list is small enough that the
+  // O(n*depth) blow-up doesn't matter.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of all) {
+      if (f.parentId && childIds.has(f.parentId) && !childIds.has(f.id)) {
+        childIds.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  const subCount = childIds.size - 1;
+  const base = `Delete folder "${target.name}"? Notes in this folder will move to All Notes.`;
+  if (subCount === 0) return base;
+  return `Delete folder "${target.name}" and its ${subCount} subfolder${subCount === 1 ? '' : 's'}? Notes inside will move to All Notes.`;
 }

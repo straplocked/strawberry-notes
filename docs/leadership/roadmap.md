@@ -108,6 +108,14 @@ The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public
 
 Non-bloat justification: zero new runtime deps; one new lib module each for `rate-limit`, `user-admin`, `first-run`, and `time-range`; two CLI shells in `scripts/`; two env knobs; the time filter adds **four** new query-string tokens but no new routes. Default behaviour with zero config is now *more conservative* (signup gated) and *more useful* (Welcome note + time filters) than v1.2.
 
+### Tier 3 — landed
+
+- **Nested folders.** `folders.parent_id` (migration `0007`) lets folders form a tree. The sidebar renders the tree with collapse/expand chevrons and a per-folder "+" button to add a sub-folder under any node. `ON DELETE CASCADE` on the self-FK means deleting a parent removes the entire subtree of folders; notes inside fall back to All Notes via the existing `notes.folder_id ON DELETE SET NULL`. Cycle prevention lives in `lib/notes/folder-service.ts` (`assertParentLegal`) — Postgres has no native check. The MCP gains an `update_folder` tool so agents can reparent or rename programmatically; `create_folder` accepts `parentId`. Old flat-folder layouts continue to work unchanged because top-level folders just have `parent_id = NULL`.
+- **Tag rename + merge UI.** New **Tags** section in `Settings` lists every tag with its note count, an inline rename, and a delete. Renaming to a name that already exists triggers a confirm + merge — every `note_tags` row pointing at the source is rewritten to the existing tag (`ON CONFLICT DO NOTHING` handles notes that already had both), then the source row is dropped. Exposed at `PATCH /api/tags/:id` and `DELETE /api/tags/:id`, plus MCP tools `rename_tag` / `delete_tag`. Tag service moved from a single `listTags` to a real `lib/notes/tag-service.ts` with merge-aware operations.
+- **Trigram index on `notes.title`.** Migration `0006` enables `pg_trgm` and adds a GIN index `notes_title_trgm_idx ON notes USING gin (title gin_trgm_ops)`. The existing ILIKE scan in `GET /api/notes/titles` (the `[[` autocomplete) and in the FTS-fallback branch of `listNotes` now uses the trigram index automatically; no query changes needed. Keeps the autocomplete fast into the thousands of notes per user.
+
+Non-bloat justification: zero new runtime deps; two SQL migrations (one extension + index, one column + FK + index); one new file each for `app/api/tags/[id]/route.ts` and `components/app/settings/TagsSection.tsx`. Folder service grew from 60 LOC to ~150 with cycle detection; MCP gained three tools that mirror the new REST surface.
+
 ---
 
 See [../../CHANGELOG.md](../CHANGELOG.md) for per-doc-refresh history; `git log` for per-code-change history.
@@ -138,11 +146,11 @@ Compatible with the non-bloat line. Ordered by leverage per unit of code.
 - **Offline write queue.** Dexie is already installed. Queue edits in IndexedDB while offline and flush on reconnect. Main risk: conflict resolution. Mitigation: last-write-wins at document granularity, same as today.
 - **Email-based password reset (self-service).** The v1.3 hardening ships an operator-driven CLI (`npm run user:reset`); a self-service flow would still need SMTP config — kept out of v1.3 to avoid the operator burden.
 - **Graph view.** Backlinks already feed a graph — the hard part is layout. Use D3-force or similar client-side only; no server change needed.
-- **Nested folders.** Schema already has `folderId: uuid | null`; nesting adds a `parentId` on `folders`. Tree UI is the hard part.
+- **Nested folders** — *shipped in v1.3* (Tier 3 above). Future candidates: drag-to-reparent in the sidebar (the schema and API already support `parentId` updates), and a "Move to…" submenu in the folder hover actions for keyboard-only reparenting.
 - **Time-aware filters** — *shipped in v1.3* (Tier 2 above) as Today / Yesterday / Past 7 / Past 30. Future v1.3+ candidates: a custom-range picker, a per-folder time view that composes time + folder, and a "today's note" template that pre-fills the editor when the user hits **+** while Today is selected.
 - **Attachments beyond images.** PDFs, text files, etc. Requires magic-byte sniffing in the upload endpoint (see [../technical/uploads.md](../technical/uploads.md)).
-- **Tag autocomplete / rename UI.** Tags are already modeled; needs UI.
-- **Trigram index on `notes.title`.** Cheap follow-up to the `[[` autocomplete endpoint — use `pg_trgm` GIN for thousands-of-notes vaults. Currently capped by `LIMIT 20`.
+- **Tag autocomplete / rename UI** — *rename + merge + delete shipped in v1.3* (Tier 3 above). Future candidate: in-editor autocomplete on the inline tag editor (currently the editor only suggests tags the user already types into).
+- **Trigram index on `notes.title`** — *shipped in v1.3* (Tier 3 above). Title autocomplete now indexes ILIKE substring queries.
 - **`all.zip` re-import.** Closes the symmetric-backup loop; manifest schema is already stable.
 - **Per-user embedding model choice.** Let users pick between short-context and long-context embedding models when the operator has more than one configured.
 

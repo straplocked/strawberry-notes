@@ -40,12 +40,15 @@ const jsonHeaders = { 'content-type': 'application/json' } as const;
 export const api = {
   folders: {
     list: () => req<FolderDTO[]>('GET', '/api/folders'),
-    create: (input: { name: string; color?: string }) =>
+    create: (input: { name: string; color?: string; parentId?: string | null }) =>
       req<FolderDTO>('POST', '/api/folders', {
         headers: jsonHeaders,
         body: JSON.stringify(input),
       }),
-    patch: (id: string, input: { name?: string; color?: string; position?: number }) =>
+    patch: (
+      id: string,
+      input: { name?: string; color?: string; position?: number; parentId?: string | null },
+    ) =>
       req<FolderDTO>('PATCH', `/api/folders/${id}`, {
         headers: jsonHeaders,
         body: JSON.stringify(input),
@@ -55,6 +58,18 @@ export const api = {
   },
   tags: {
     list: () => req<TagDTO[]>('GET', '/api/tags'),
+    /**
+     * Rename or merge. Server returns `{ id, merged }`: `id` is the surviving
+     * tag (same as input on a pure rename, the existing tag's id on merge),
+     * `merged` is true when the new name collided with an existing tag and
+     * its memberships got rewritten to the existing one.
+     */
+    patch: (id: string, input: { name: string }) =>
+      req<{ id: string; merged: boolean }>('PATCH', `/api/tags/${id}`, {
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      }),
+    delete: (id: string) => req<{ ok: true }>('DELETE', `/api/tags/${id}`),
   },
   notes: {
     counts: () => req<NoteCountsDTO>('GET', '/api/notes/counts'),

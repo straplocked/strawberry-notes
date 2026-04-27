@@ -47,6 +47,12 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// `parentId` references `folders.id` for self-nesting. `ON DELETE CASCADE`
+// means deleting a parent folder removes the entire subtree of folders, and
+// the existing `notes.folderId` FK (`ON DELETE SET NULL`) takes care of any
+// notes inside those folders — they fall back to "All Notes (unfiled)".
+// Cycle prevention is enforced in the service layer; Postgres has no native
+// "no cycles in a recursive FK" check.
 export const folders = pgTable(
   'folders',
   {
@@ -54,6 +60,7 @@ export const folders = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    parentId: uuid('parent_id'),
     name: text('name').notNull(),
     color: text('color').notNull().default('#e33d4e'),
     position: integer('position').notNull().default(0),
@@ -61,6 +68,7 @@ export const folders = pgTable(
   },
   (t) => ({
     userFolderIdx: index('folders_user_idx').on(t.userId, t.position),
+    parentIdx: index('folders_parent_idx').on(t.parentId),
   }),
 );
 

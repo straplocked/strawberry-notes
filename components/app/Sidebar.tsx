@@ -7,6 +7,7 @@ import {
   IconAll,
   IconBerry,
   IconCalendar,
+  IconChevronRight,
   IconCog,
   IconEdit,
   IconLogout,
@@ -195,13 +196,44 @@ export interface SidebarProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   density: Density;
-  onAddFolder?: (input: { name: string; color: string }) => void;
+  onAddFolder?: (input: { name: string; color: string; parentId: string | null }) => void;
   onDeleteFolder?: (folder: FolderDTO) => void;
   onRenameFolder?: (folder: FolderDTO, name: string) => void;
   onSignOut?: () => void;
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
   fullWidth?: boolean;
   alwaysShowFolderActions?: boolean;
+}
+
+interface FolderTreeNode {
+  folder: FolderDTO;
+  depth: number;
+  children: FolderTreeNode[];
+}
+
+/**
+ * Build a tree from a flat folder list. Orphan folders (parent missing or
+ * filtered out) surface at the root so a corrupted parent_id is never the
+ * reason a folder disappears from the sidebar.
+ */
+function buildFolderTree(folders: FolderDTO[]): FolderTreeNode[] {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const childrenOf = new Map<string | null, FolderDTO[]>();
+  for (const f of folders) {
+    const parentKey = f.parentId && byId.has(f.parentId) ? f.parentId : null;
+    const list = childrenOf.get(parentKey);
+    if (list) list.push(f);
+    else childrenOf.set(parentKey, [f]);
+  }
+  const build = (parentId: string | null, depth: number): FolderTreeNode[] => {
+    const kids = childrenOf.get(parentId) ?? [];
+    return kids.map((folder) => ({
+      folder,
+      depth,
+      children: build(folder.id, depth + 1),
+    }));
+  };
+  return build(null, 0);
 }
 
 function SidebarImpl(props: SidebarProps) {
@@ -214,11 +246,18 @@ function SidebarImpl(props: SidebarProps) {
   const isActiveTime = (range: TimeRange) =>
     view.kind === 'time' && view.range === range;
 
-  const [adding, setAdding] = useState(false);
+  // `addingUnder` carries the parent folder id we're creating a sub-folder
+  // under; null means a new top-level folder; undefined means not adding.
+  const [addingUnder, setAddingUnder] = useState<string | null | undefined>(undefined);
   const [draftName, setDraftName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [hoverFolderId, setHoverFolderId] = useState<string | null>(null);
+  // Folder ids whose subtree the user has collapsed. Per-session local state —
+  // not persisted; tree shape changes (rename, reparent) shouldn't surprise
+  // the user across reloads, and the sidebar is small enough that re-expand
+  // is a single click.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   // Drop-target id: a folder uuid, '__unfiled__' for the "All Notes" row, or null.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
@@ -256,11 +295,207 @@ function SidebarImpl(props: SidebarProps) {
 
   const commitDraft = () => {
     const name = draftName.trim();
-    if (name && props.onAddFolder) {
-      props.onAddFolder({ name, color: randomAccentHex() });
+    if (name && props.onAddFolder && addingUnder !== undefined) {
+      props.onAddFolder({ name, color: randomAccentHex(), parentId: addingUnder });
     }
     setDraftName('');
-    setAdding(false);
+    setAddingUnder(undefined);
+  };
+
+  const toggleCollapsed = (id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const tree = buildFolderTree(folders);
+
+  const renderFolderNode = (node: FolderTreeNode): React.ReactNode => {
+    const f = node.folder;
+    const active = isActiveFolder(f.id);
+    const hovered = hoverFolderId === f.id;
+    const isRenaming = renamingId === f.id;
+    const hasChildren = node.children.length > 0;
+    const isCollapsed = collapsed.has(f.id);
+    // Indent steps are 14px so the chevron + dot stay readable at depth 3+.
+    const indent = node.depth * 14;
+    if (isRenaming) {
+      return (
+        <div key={f.id} style={{ ...styles.newFolderRow, paddingLeft: 10 + indent }}>
+          <span style={dotStyle(f.color)} />
+          <input
+            autoFocus
+            style={styles.newFolderInput}
+            placeholder="Folder name"
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitRename(f);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setRenamingId(null);
+                setRenameDraft('');
+              }
+            }}
+            onBlur={() => commitRename(f)}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+        </div>
+      );
+    }
+    const showActions =
+      (hovered || alwaysShowFolderActions) &&
+      (props.onDeleteFolder || props.onRenameFolder || props.onAddFolder);
+    return (
+      <div key={f.id}>
+        <div
+          style={{
+            ...itemStyle(active, dense),
+            paddingLeft: 10 + indent,
+            ...dropHighlight(dropTargetId === f.id),
+          }}
+          onClick={() => onView({ kind: 'folder', id: f.id })}
+          onMouseEnter={() => setHoverFolderId(f.id)}
+          onMouseLeave={() => setHoverFolderId((h) => (h === f.id ? null : h))}
+          {...makeDropHandlers(f.id, f.id)}
+        >
+          {hasChildren ? (
+            <button
+              type="button"
+              aria-label={isCollapsed ? `Expand "${f.name}"` : `Collapse "${f.name}"`}
+              style={{
+                ...styles.folderDelete,
+                marginLeft: -4,
+                marginRight: -2,
+                background: 'transparent',
+                border: 0,
+                color: 'var(--ink-4)',
+                transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                transition: 'transform 80ms ease-out',
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCollapsed(f.id);
+              }}
+            >
+              <IconChevronRight size={11} />
+            </button>
+          ) : (
+            <span style={{ width: 14, flexShrink: 0 }} />
+          )}
+          <span style={dotStyle(f.color)} />
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {f.name}
+          </span>
+          {showActions ? (
+            <>
+              <span style={{ ...countStyle, marginLeft: 'auto' }}>{f.count}</span>
+              {props.onAddFolder && (
+                <button
+                  type="button"
+                  aria-label={`Add subfolder under "${f.name}"`}
+                  style={{
+                    ...styles.folderDelete,
+                    marginLeft: 6,
+                    background: 'transparent',
+                    border: 0,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddingUnder(f.id);
+                    setDraftName('');
+                    // Auto-expand so the new input is visible.
+                    setCollapsed((prev) => {
+                      if (!prev.has(f.id)) return prev;
+                      const next = new Set(prev);
+                      next.delete(f.id);
+                      return next;
+                    });
+                  }}
+                >
+                  <IconPlus size={13} />
+                </button>
+              )}
+              {props.onRenameFolder && (
+                <button
+                  type="button"
+                  aria-label={`Rename folder "${f.name}"`}
+                  style={{
+                    ...styles.folderDelete,
+                    marginLeft: 6,
+                    background: 'transparent',
+                    border: 0,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRenamingId(f.id);
+                    setRenameDraft(f.name);
+                  }}
+                >
+                  <IconEdit size={13} />
+                </button>
+              )}
+              {props.onDeleteFolder && (
+                <button
+                  type="button"
+                  aria-label={`Delete folder "${f.name}"`}
+                  style={{
+                    ...styles.folderDelete,
+                    marginLeft: 6,
+                    background: 'transparent',
+                    border: 0,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onDeleteFolder?.(f);
+                  }}
+                >
+                  <IconTrash size={13} />
+                </button>
+              )}
+            </>
+          ) : (
+            <span style={countStyle}>{f.count}</span>
+          )}
+        </div>
+        {addingUnder === f.id && (
+          <div style={{ ...styles.newFolderRow, paddingLeft: 10 + (node.depth + 1) * 14 }}>
+            <span style={{ width: 14, flexShrink: 0 }} />
+            <span style={dotStyle('var(--ink-4)')} />
+            <input
+              autoFocus
+              style={styles.newFolderInput}
+              placeholder="New subfolder…"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitDraft();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setAddingUnder(undefined);
+                  setDraftName('');
+                }
+              }}
+              onBlur={commitDraft}
+            />
+          </div>
+        )}
+        {hasChildren && !isCollapsed && node.children.map((c) => renderFolderNode(c))}
+      </div>
+    );
   };
 
   const commitRename = (folder: FolderDTO) => {
@@ -346,13 +581,13 @@ function SidebarImpl(props: SidebarProps) {
                 size={13}
                 style={{ color: 'var(--ink-4)', cursor: 'pointer' }}
                 onClick={() => {
-                  setAdding(true);
+                  setAddingUnder(null);
                   setDraftName('');
                 }}
               />
             )}
           </div>
-          {adding && (
+          {addingUnder === null && (
             <div style={styles.newFolderRow}>
               <span style={dotStyle('var(--ink-4)')} />
               <input
@@ -367,7 +602,7 @@ function SidebarImpl(props: SidebarProps) {
                     commitDraft();
                   } else if (e.key === 'Escape') {
                     e.preventDefault();
-                    setAdding(false);
+                    setAddingUnder(undefined);
                     setDraftName('');
                   }
                 }}
@@ -375,108 +610,7 @@ function SidebarImpl(props: SidebarProps) {
               />
             </div>
           )}
-          {folders.map((f) => {
-            const active = isActiveFolder(f.id);
-            const hovered = hoverFolderId === f.id;
-            const isRenaming = renamingId === f.id;
-            if (isRenaming) {
-              return (
-                <div key={f.id} style={styles.newFolderRow}>
-                  <span style={dotStyle(f.color)} />
-                  <input
-                    autoFocus
-                    style={styles.newFolderInput}
-                    placeholder="Folder name"
-                    value={renameDraft}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        commitRename(f);
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        setRenamingId(null);
-                        setRenameDraft('');
-                      }
-                    }}
-                    onBlur={() => commitRename(f)}
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                </div>
-              );
-            }
-            const showActions =
-              (hovered || alwaysShowFolderActions) &&
-              (props.onDeleteFolder || props.onRenameFolder);
-            return (
-              <div
-                key={f.id}
-                style={{
-                  ...itemStyle(active, dense),
-                  ...dropHighlight(dropTargetId === f.id),
-                }}
-                onClick={() => onView({ kind: 'folder', id: f.id })}
-                onMouseEnter={() => setHoverFolderId(f.id)}
-                onMouseLeave={() => setHoverFolderId((h) => (h === f.id ? null : h))}
-                {...makeDropHandlers(f.id, f.id)}
-              >
-                <span style={dotStyle(f.color)} />
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {f.name}
-                </span>
-                {showActions ? (
-                  <>
-                    <span style={{ ...countStyle, marginLeft: 'auto' }}>{f.count}</span>
-                    {props.onRenameFolder && (
-                      <button
-                        type="button"
-                        aria-label={`Rename folder "${f.name}"`}
-                        style={{
-                          ...styles.folderDelete,
-                          marginLeft: 6,
-                          background: 'transparent',
-                          border: 0,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRenamingId(f.id);
-                          setRenameDraft(f.name);
-                        }}
-                      >
-                        <IconEdit size={13} />
-                      </button>
-                    )}
-                    {props.onDeleteFolder && (
-                      <button
-                        type="button"
-                        aria-label={`Delete folder "${f.name}"`}
-                        style={{
-                          ...styles.folderDelete,
-                          marginLeft: 6,
-                          background: 'transparent',
-                          border: 0,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          props.onDeleteFolder?.(f);
-                        }}
-                      >
-                        <IconTrash size={13} />
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <span style={countStyle}>{f.count}</span>
-                )}
-              </div>
-            );
-          })}
+          {tree.map((node) => renderFolderNode(node))}
         </div>
 
         {tags.length > 0 && (

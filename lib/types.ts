@@ -5,9 +5,12 @@
 
 export interface FolderDTO {
   id: string;
+  /** Parent folder id for nesting; null for top-level folders. */
+  parentId: string | null;
   name: string;
   color: string;
   position: number;
+  /** Direct (own) note count. Does NOT include notes inside descendant folders. */
   count: number;
 }
 
