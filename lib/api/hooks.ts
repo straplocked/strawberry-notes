@@ -150,6 +150,47 @@ interface ListContext {
   prevLists: ListEntry[];
   prevFolders?: FolderDTO[];
   prevNote?: NoteDTO;
+  /** Snapshot of `qk.tags` so an optimistic tag injection can be rolled back. */
+  prevTags?: TagDTO[];
+}
+
+/**
+ * Compute the optimistic tag-cloud cache for a `patchNote({ tagNames })` call.
+ *
+ * Returns the new array if any of the names aren't already in `prevTags`, so
+ * brand-new tags appear in the sidebar cloud the same render the editor's
+ * chip does — without waiting for the server roundtrip + invalidate refetch.
+ *
+ * Names are normalised the same way `lib/notes/tag-resolution.ts` does
+ * (trim + lowercase + 40-char cap). New entries get a `tmp-tag-<name>` id;
+ * the real id replaces it after `usePatchNote.onSuccess` invalidates
+ * `qk.tags` and the refetch lands.
+ *
+ * Returns `null` when the cache doesn't need to change (every name is
+ * already in the cache) so the caller can skip the `setQueryData` call.
+ *
+ * Exported for unit-testing — the wiring lives in `usePatchNote` below.
+ */
+export function injectOptimisticTags(
+  prevTags: TagDTO[],
+  patchTagNames: string[],
+): TagDTO[] | null {
+  const cleanNames = patchTagNames
+    .map((n) => n.trim().toLowerCase())
+    .filter((n) => n.length > 0 && n.length <= 40);
+  const existing = new Set(prevTags.map((t) => t.name));
+  const fresh: TagDTO[] = cleanNames
+    .filter((n) => !existing.has(n))
+    // De-dupe within the patch itself (the editor already does this, but
+    // the helper shouldn't trust the caller).
+    .filter((n, i, a) => a.indexOf(n) === i)
+    .map((name) => ({
+      id: `tmp-tag-${name}`,
+      name,
+      count: 1,
+    }));
+  if (fresh.length === 0) return null;
+  return [...prevTags, ...fresh];
 }
 
 function snapshotLists(qc: ReturnType<typeof useQueryClient>): ListEntry[] {
@@ -244,9 +285,14 @@ export function useCreateNote() {
         if (ctx.prevFolders) qc.setQueryData(qk.folders, ctx.prevFolders);
       }
     },
-    onSuccess: (note, _input, ctx) => {
+    onSuccess: (note, input, ctx) => {
       dlog('mut', 'createNote:success', { id: note.id });
       qc.invalidateQueries({ queryKey: qk.counts });
+      // If the create carried tagNames, the server may have auto-created
+      // tags — refresh the sidebar cloud so they show up.
+      if (input.tagNames && input.tagNames.length > 0) {
+        qc.invalidateQueries({ queryKey: qk.tags });
+      }
       const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
       if (!tempId) return;
       // Swap temp id for real id in every cached list
@@ -354,6 +400,19 @@ export function usePatchNote() {
         return next;
       });
 
+      // 2.5) Optimistically inject brand-new tags into the sidebar tag cloud.
+      // Existing tags' counts are NOT bumped here — they refresh on the
+      // onSuccess invalidate. The point of this branch is the user-visible
+      // bug "I added a new tag but the cloud didn't show it until refresh."
+      let prevTags: TagDTO[] | undefined;
+      if (patch.tagNames !== undefined) {
+        prevTags = qc.getQueryData<TagDTO[]>(qk.tags);
+        if (prevTags) {
+          const next = injectOptimisticTags(prevTags, patch.tagNames);
+          if (next) qc.setQueryData<TagDTO[]>(qk.tags, next);
+        }
+      }
+
       // 3) Adjust folder counts if folderId or trashed changed.
       if (prevFolders && (patch.folderId !== undefined || patch.trashed !== undefined)) {
         const before = prevNote?.folderId ?? null;
@@ -392,7 +451,7 @@ export function usePatchNote() {
         }
       }
 
-      return { prevLists, prevFolders, prevNote } satisfies ListContext;
+      return { prevLists, prevFolders, prevNote, prevTags } satisfies ListContext;
     },
     onError: (err, { id }, ctx) => {
       dlog('mut', 'patchNote:error', err);
@@ -400,6 +459,7 @@ export function usePatchNote() {
       if (ctx.prevNote) qc.setQueryData(qk.note(id), ctx.prevNote);
       restoreLists(qc, ctx.prevLists);
       if (ctx.prevFolders) qc.setQueryData(qk.folders, ctx.prevFolders);
+      if (ctx.prevTags) qc.setQueryData(qk.tags, ctx.prevTags);
     },
     onSuccess: (note, { patch }) => {
       dlog('mut', 'patchNote:success', { id: note.id });
