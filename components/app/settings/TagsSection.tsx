@@ -27,25 +27,34 @@ const styles: Record<string, CSSProperties> = {
     marginBottom: 20,
   },
   list: { display: 'flex', flexDirection: 'column', gap: 8 },
+  // Layout-only base. Background, border, and hover come from `.sn-list-row`
+  // in globals.css so :hover composes with the inline styles.
   row: {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
     padding: '12px 14px',
-    background: 'var(--surface-2)',
-    border: '1px solid var(--hair)',
     borderRadius: 8,
     fontSize: 13,
   },
-  name: { fontWeight: 600 },
+  hash: { color: 'var(--ink-4)', flexShrink: 0 },
+  name: {
+    fontWeight: 600,
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   count: {
     color: 'var(--ink-4)',
-    fontSize: 11,
+    fontSize: 12,
     fontVariantNumeric: 'tabular-nums',
+    flexShrink: 0,
   },
-  spacer: { flex: 1 },
   input: {
     flex: 1,
+    minWidth: 0,
     background: 'var(--surface)',
     border: '1px solid var(--hair-2)',
     borderRadius: 6,
@@ -55,14 +64,14 @@ const styles: Record<string, CSSProperties> = {
     outline: 'none',
     fontFamily: 'inherit',
   },
-  btnGhost: {
-    background: 'transparent',
-    color: 'var(--ink-3)',
-    border: '1px solid var(--hair)',
+  // Layout-only base for ghost buttons. Paint comes from `.sn-btn-ghost[--danger]`.
+  btnBase: {
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
     cursor: 'pointer',
+    fontFamily: 'inherit',
+    flexShrink: 0,
   },
   empty: { color: 'var(--ink-4)', fontSize: 13, fontStyle: 'italic', padding: '16px 0' },
 };
@@ -129,7 +138,7 @@ export function TagsSection() {
 
   const onDelete = (t: TagDTO) => {
     const ok = window.confirm(
-      `Delete the "#${t.name}" tag? The tag will be removed from all ${t.count} note${t.count === 1 ? '' : 's'} that have it; the notes themselves are kept.`,
+      `Delete the "#${t.name}" tag? It will be removed from all ${t.count} note${t.count === 1 ? '' : 's'} that have it; the notes themselves stay.`,
     );
     if (!ok) return;
     setError(null);
@@ -142,9 +151,7 @@ export function TagsSection() {
     <section style={styles.section}>
       <h2 style={styles.h2}>Tags</h2>
       <p style={styles.help}>
-        Rename or merge tags here. Renaming to a name that already exists merges the two — every
-        note that had the old tag gets the existing tag instead. Deleting a tag removes it from all
-        notes; the notes themselves stay.
+        Rename merges into existing tags. Delete removes the tag from every note; the notes stay.
       </p>
 
       {error && (
@@ -161,8 +168,8 @@ export function TagsSection() {
             const editing = editingId === t.id;
             const busy = busyId === t.id;
             return (
-              <div key={t.id} style={styles.row}>
-                <span style={{ color: 'var(--ink-4)' }}>#</span>
+              <div key={t.id} className="sn-list-row" style={styles.row}>
+                <span style={styles.hash}>#</span>
                 {editing ? (
                   <input
                     autoFocus
@@ -184,14 +191,14 @@ export function TagsSection() {
                 ) : (
                   <span style={styles.name}>{t.name}</span>
                 )}
-                <span style={styles.spacer} />
                 <span style={styles.count}>
                   {t.count} note{t.count === 1 ? '' : 's'}
                 </span>
                 {editing ? (
                   <>
                     <button
-                      style={styles.btnGhost}
+                      className="sn-btn-ghost"
+                      style={styles.btnBase}
                       onClick={() => commitRename(t)}
                       disabled={busy}
                       type="button"
@@ -199,7 +206,8 @@ export function TagsSection() {
                       {busy ? 'Saving…' : 'Save'}
                     </button>
                     <button
-                      style={styles.btnGhost}
+                      className="sn-btn-ghost"
+                      style={styles.btnBase}
                       onClick={cancelRename}
                       disabled={busy}
                       type="button"
@@ -210,7 +218,8 @@ export function TagsSection() {
                 ) : (
                   <>
                     <button
-                      style={styles.btnGhost}
+                      className="sn-btn-ghost"
+                      style={styles.btnBase}
                       onClick={() => startRename(t)}
                       disabled={busy}
                       type="button"
@@ -218,7 +227,8 @@ export function TagsSection() {
                       Rename
                     </button>
                     <button
-                      style={styles.btnGhost}
+                      className="sn-btn-ghost sn-btn-ghost--danger"
+                      style={styles.btnBase}
                       onClick={() => onDelete(t)}
                       disabled={busy}
                       type="button"

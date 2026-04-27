@@ -144,3 +144,113 @@ body {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+
+/* ---------------------------------------------------------------------------
+ * Stateful styles for the sidebar + settings.
+ *
+ * Inline-style React (`style={{...}}`) cannot express `:hover` because inline
+ * declarations beat any stylesheet rule. The convention in this project is:
+ *   - Layout (padding, gap, flex, fontSize) lives inline in the component.
+ *   - State-dependent paint (rest/hover/active backgrounds and ink) lives
+ *     here in `globals.css` under a small set of `sn-*` classes.
+ * Components add `className="sn-..."` and *omit* `background` / `color` for
+ * the states they want this sheet to manage.
+ * ------------------------------------------------------------------------- */
+
+/* Sidebar navigation row — Library / Time / Folder rows / Trash. */
+.sn-nav-row {
+  color: var(--ink-2);
+  background: transparent;
+  transition:
+    background 80ms ease-out,
+    color 80ms ease-out;
+}
+.sn-nav-row:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.sn-nav-row--active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 0 0 1px var(--hair);
+}
+.sn-nav-row--active:hover {
+  background: var(--surface);
+}
+
+/* Square icon button used inside sidebar rows (chevron, add, edit, delete). */
+.sn-icon-btn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink-4);
+  transition:
+    background 80ms ease-out,
+    color 80ms ease-out;
+}
+.sn-icon-btn:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+.sn-icon-btn--danger:hover {
+  color: var(--berry);
+}
+
+/* Sidebar tag-cloud chip. */
+.sn-tag-chip {
+  background: var(--surface-3);
+  color: var(--ink-3);
+  transition:
+    background 80ms ease-out,
+    color 80ms ease-out;
+}
+.sn-tag-chip:hover {
+  background: var(--hair-2);
+  color: var(--ink);
+}
+.sn-tag-chip--active,
+.sn-tag-chip--active:hover {
+  background: var(--berry-soft);
+  color: var(--berry-ink);
+}
+
+/* Settings → Tags list row. */
+.sn-list-row {
+  background: var(--surface-2);
+  border: 1px solid var(--hair);
+  transition:
+    background 80ms ease-out,
+    border-color 80ms ease-out;
+}
+.sn-list-row:hover {
+  background: var(--surface-3);
+  border-color: var(--hair-2);
+}
+
+/* Settings ghost button. Default + danger variant. */
+.sn-btn-ghost {
+  background: transparent;
+  color: var(--ink-3);
+  border: 1px solid var(--hair);
+  transition:
+    background 80ms ease-out,
+    color 80ms ease-out,
+    border-color 80ms ease-out;
+}
+.sn-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+  border-color: var(--hair-2);
+}
+.sn-btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sn-btn-ghost--danger:hover:not(:disabled) {
+  background: transparent;
+  color: var(--berry);
+  border-color: var(--berry);
+}
