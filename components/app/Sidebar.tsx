@@ -154,12 +154,17 @@ const styles: Record<string, CSSProperties> = {
 /**
  * Layout-only base for sidebar nav rows. Background, ink, and active ring
  * come from `.sn-nav-row[--active]` in globals.css.
+ *
+ * `gap: 8` (was 10) tightens the row's left side so labels sit closer to
+ * the leading icon/dot. Combined with the leading-affordance sub-flex used
+ * for folder rows, this brings the leading inset down to roughly match the
+ * trailing inset of the count/actions slot.
  */
 function itemStyle(dense: boolean): CSSProperties {
   return {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     padding: dense ? '5px 10px' : '7px 10px',
     borderRadius: 7,
     cursor: 'pointer',
@@ -348,16 +353,21 @@ function SidebarImpl(props: SidebarProps) {
     const isRenaming = renamingId === f.id;
     const hasChildren = node.children.length > 0;
     const isCollapsed = collapsed.has(f.id);
-    // 14px indent per nesting level keeps the chevron readable at depth 3+.
-    const indent = node.depth * 14;
+    // 12px indent per nesting level (was 14) — pairs with the tighter row
+    // gap and leading-group spacing so 3-deep folders still have room to
+    // breathe while keeping the leading inset close to the row padding.
+    const indent = node.depth * 12;
     // Top-level folders carry a coloured dot for identity. Sub-folders
     // inherit identity from the parent above and the chevron — a second dot
     // is visual noise inside an already-narrow 232px rail.
     const showDot = node.depth === 0;
     if (isRenaming) {
       return (
-        <div key={f.id} style={{ ...styles.newFolderRow, paddingLeft: 10 + indent }}>
-          {showDot ? <span style={dotStyle(f.color)} /> : <span style={{ width: 8, flexShrink: 0 }} />}
+        <div key={f.id} style={{ ...styles.newFolderRow, paddingLeft: 10 + indent, gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <span style={{ width: 12, flexShrink: 0 }} />
+            {showDot && <span style={dotStyle(f.color)} />}
+          </div>
           <input
             autoFocus
             style={styles.newFolderInput}
@@ -397,34 +407,39 @@ function SidebarImpl(props: SidebarProps) {
           onMouseLeave={() => setHoverFolderId((h) => (h === f.id ? null : h))}
           {...makeDropHandlers(f.id, f.id)}
         >
-          {hasChildren ? (
-            <button
-              type="button"
-              className="sn-icon-btn"
-              aria-label={isCollapsed ? `Expand "${f.name}"` : `Collapse "${f.name}"`}
-              style={{
-                ...styles.iconBtn,
-                width: 18,
-                height: 18,
-                marginLeft: -4,
-                marginRight: -4,
-                // currentColor so the chevron belongs to the row's ink, not
-                // a permanent ink-4 annotation that ignores active/hover.
-                color: 'currentColor',
-                transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-                transition: 'transform 80ms ease-out',
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleCollapsed(f.id);
-              }}
-            >
-              <IconChevronRight size={11} />
-            </button>
-          ) : (
-            <span style={{ width: 10, flexShrink: 0 }} />
-          )}
-          {showDot && <span style={dotStyle(f.color)} />}
+          {/* Leading affordance: chevron-or-spacer + colour dot, tightly
+              packed in their own 4px-gap subflex. Without this group the
+              row's outer `gap: 8` accumulates twice (chevron→dot→name) and
+              the label's leading inset balloons past the trailing inset of
+              the count/actions slot. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            {hasChildren ? (
+              <button
+                type="button"
+                className="sn-icon-btn"
+                aria-label={isCollapsed ? `Expand "${f.name}"` : `Collapse "${f.name}"`}
+                style={{
+                  ...styles.iconBtn,
+                  width: 12,
+                  height: 12,
+                  // currentColor so the chevron belongs to the row's ink, not
+                  // a permanent ink-4 annotation that ignores active/hover.
+                  color: 'currentColor',
+                  transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+                  transition: 'transform 80ms ease-out',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCollapsed(f.id);
+                }}
+              >
+                <IconChevronRight size={9} />
+              </button>
+            ) : (
+              <span style={{ width: 12, flexShrink: 0 }} />
+            )}
+            {showDot && <span style={dotStyle(f.color)} />}
+          </div>
           <span
             style={{
               flex: 1,
@@ -520,9 +535,17 @@ function SidebarImpl(props: SidebarProps) {
           </div>
         </div>
         {addingUnder === f.id && (
-          <div style={{ ...styles.newFolderRow, paddingLeft: 10 + (node.depth + 1) * 14 }}>
-            <span style={{ width: 10, flexShrink: 0 }} />
-            <span style={{ width: 8, flexShrink: 0 }} />
+          <div
+            style={{
+              ...styles.newFolderRow,
+              paddingLeft: 10 + (node.depth + 1) * 12,
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <span style={{ width: 12, flexShrink: 0 }} />
+              <span style={dotStyle('var(--ink-4)')} />
+            </div>
             <input
               autoFocus
               style={styles.newFolderInput}
@@ -645,8 +668,11 @@ function SidebarImpl(props: SidebarProps) {
             )}
           </div>
           {addingUnder === null && (
-            <div style={styles.newFolderRow}>
-              <span style={dotStyle('var(--ink-4)')} />
+            <div style={{ ...styles.newFolderRow, gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <span style={{ width: 12, flexShrink: 0 }} />
+                <span style={dotStyle('var(--ink-4)')} />
+              </div>
               <input
                 autoFocus
                 style={styles.newFolderInput}
