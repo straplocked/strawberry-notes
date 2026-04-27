@@ -62,7 +62,8 @@ const styles: Record<string, CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
     fontWeight: 600,
-    color: 'var(--ink-4)',
+    // One step warmer than the inline `+` action so the label wins the row.
+    color: 'var(--ink-3)',
     padding: '6px 10px 4px',
     display: 'flex',
     justifyContent: 'space-between',
@@ -123,19 +124,38 @@ const styles: Record<string, CSSProperties> = {
     outline: 'none',
     fontFamily: 'inherit',
   },
-  folderDelete: {
-    marginLeft: 'auto',
-    width: 20,
-    height: 20,
+  // Layout-only base for the sidebar's per-row icon buttons (chevron, +,
+  // edit, delete). Background and color come from `.sn-icon-btn` in
+  // globals.css so `:hover` actually composes — inline declarations beat
+  // any stylesheet rule.
+  iconBtn: {
+    width: 22,
+    height: 22,
     display: 'grid',
     placeItems: 'center',
     borderRadius: 5,
-    color: 'var(--ink-4)',
-    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  // Right-edge slot of a folder row — count at rest, action buttons on
+  // hover. Both layers are absolutely positioned over each other so the
+  // row width never shifts. See renderFolderNode().
+  trailingSlot: {
+    marginLeft: 'auto',
+    position: 'relative',
+    minWidth: 72,
+    height: 22,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexShrink: 0,
   },
 };
 
-function itemStyle(active: boolean, dense: boolean): CSSProperties {
+/**
+ * Layout-only base for sidebar nav rows. Background, ink, and active ring
+ * come from `.sn-nav-row[--active]` in globals.css.
+ */
+function itemStyle(dense: boolean): CSSProperties {
   return {
     display: 'flex',
     alignItems: 'center',
@@ -143,13 +163,19 @@ function itemStyle(active: boolean, dense: boolean): CSSProperties {
     padding: dense ? '5px 10px' : '7px 10px',
     borderRadius: 7,
     cursor: 'pointer',
-    color: active ? 'var(--ink)' : 'var(--ink-2)',
-    background: active ? 'var(--surface)' : 'transparent',
-    boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06), 0 0 0 1px var(--hair)' : 'none',
     fontSize: 13,
-    fontWeight: active ? 600 : 500,
     position: 'relative',
   };
+}
+
+function navRowClass(active: boolean): string {
+  return active ? 'sn-nav-row sn-nav-row--active' : 'sn-nav-row';
+}
+
+function navRowStyle(active: boolean, dense: boolean): CSSProperties {
+  // `fontWeight` stays inline because it's a numeric design token, not a
+  // state-toggleable color. Same reasoning as `padding`.
+  return { ...itemStyle(dense), fontWeight: active ? 600 : 500 };
 }
 
 function dotStyle(color: string): CSSProperties {
@@ -164,16 +190,18 @@ const countStyle: CSSProperties = {
   fontWeight: 500,
 };
 
-function tagChip(active: boolean): CSSProperties {
+/**
+ * Layout-only base for a tag-cloud chip. Background + ink come from
+ * `.sn-tag-chip[--active]` in globals.css so we get hover and rest paint
+ * without per-chip mouseover state.
+ */
+function tagChipStyle(active: boolean): CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
     padding: '4px 9px 5px',
     borderRadius: 999,
-    background: active ? 'var(--berry-soft)' : 'var(--surface)',
-    color: active ? 'var(--berry-ink)' : 'var(--ink-2)',
-    border: '1px solid ' + (active ? 'transparent' : 'var(--hair)'),
     fontSize: 11.5,
     cursor: 'pointer',
     fontWeight: active ? 600 : 500,
@@ -320,12 +348,16 @@ function SidebarImpl(props: SidebarProps) {
     const isRenaming = renamingId === f.id;
     const hasChildren = node.children.length > 0;
     const isCollapsed = collapsed.has(f.id);
-    // Indent steps are 14px so the chevron + dot stay readable at depth 3+.
+    // 14px indent per nesting level keeps the chevron readable at depth 3+.
     const indent = node.depth * 14;
+    // Top-level folders carry a coloured dot for identity. Sub-folders
+    // inherit identity from the parent above and the chevron — a second dot
+    // is visual noise inside an already-narrow 232px rail.
+    const showDot = node.depth === 0;
     if (isRenaming) {
       return (
         <div key={f.id} style={{ ...styles.newFolderRow, paddingLeft: 10 + indent }}>
-          <span style={dotStyle(f.color)} />
+          {showDot ? <span style={dotStyle(f.color)} /> : <span style={{ width: 8, flexShrink: 0 }} />}
           <input
             autoFocus
             style={styles.newFolderInput}
@@ -354,8 +386,9 @@ function SidebarImpl(props: SidebarProps) {
     return (
       <div key={f.id}>
         <div
+          className={navRowClass(active)}
           style={{
-            ...itemStyle(active, dense),
+            ...navRowStyle(active, dense),
             paddingLeft: 10 + indent,
             ...dropHighlight(dropTargetId === f.id),
           }}
@@ -367,14 +400,17 @@ function SidebarImpl(props: SidebarProps) {
           {hasChildren ? (
             <button
               type="button"
+              className="sn-icon-btn"
               aria-label={isCollapsed ? `Expand "${f.name}"` : `Collapse "${f.name}"`}
               style={{
-                ...styles.folderDelete,
+                ...styles.iconBtn,
+                width: 18,
+                height: 18,
                 marginLeft: -4,
-                marginRight: -2,
-                background: 'transparent',
-                border: 0,
-                color: 'var(--ink-4)',
+                marginRight: -4,
+                // currentColor so the chevron belongs to the row's ink, not
+                // a permanent ink-4 annotation that ignores active/hover.
+                color: 'currentColor',
                 transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
                 transition: 'transform 80ms ease-out',
               }}
@@ -386,11 +422,13 @@ function SidebarImpl(props: SidebarProps) {
               <IconChevronRight size={11} />
             </button>
           ) : (
-            <span style={{ width: 14, flexShrink: 0 }} />
+            <span style={{ width: 10, flexShrink: 0 }} />
           )}
-          <span style={dotStyle(f.color)} />
+          {showDot && <span style={dotStyle(f.color)} />}
           <span
             style={{
+              flex: 1,
+              minWidth: 0,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -398,24 +436,44 @@ function SidebarImpl(props: SidebarProps) {
           >
             {f.name}
           </span>
-          {showActions ? (
-            <>
-              <span style={{ ...countStyle, marginLeft: 'auto' }}>{f.count}</span>
+          {/* Fixed-width slot. Count and actions cross-fade in place — no
+              layout jitter when the cursor moves on/off the row. */}
+          <div style={styles.trailingSlot}>
+            <span
+              style={{
+                ...countStyle,
+                marginLeft: 0,
+                position: 'absolute',
+                right: 4,
+                opacity: showActions ? 0 : 1,
+                transition: 'opacity 80ms ease-out',
+                pointerEvents: 'none',
+              }}
+            >
+              {f.count}
+            </span>
+            <div
+              style={{
+                position: 'absolute',
+                right: 0,
+                display: 'flex',
+                gap: 2,
+                opacity: showActions ? 1 : 0,
+                transition: 'opacity 80ms ease-out',
+                pointerEvents: showActions ? 'auto' : 'none',
+              }}
+            >
               {props.onAddFolder && (
                 <button
                   type="button"
+                  className="sn-icon-btn"
                   aria-label={`Add subfolder under "${f.name}"`}
-                  style={{
-                    ...styles.folderDelete,
-                    marginLeft: 6,
-                    background: 'transparent',
-                    border: 0,
-                  }}
+                  style={styles.iconBtn}
+                  tabIndex={showActions ? 0 : -1}
                   onClick={(e) => {
                     e.stopPropagation();
                     setAddingUnder(f.id);
                     setDraftName('');
-                    // Auto-expand so the new input is visible.
                     setCollapsed((prev) => {
                       if (!prev.has(f.id)) return prev;
                       const next = new Set(prev);
@@ -430,13 +488,10 @@ function SidebarImpl(props: SidebarProps) {
               {props.onRenameFolder && (
                 <button
                   type="button"
+                  className="sn-icon-btn"
                   aria-label={`Rename folder "${f.name}"`}
-                  style={{
-                    ...styles.folderDelete,
-                    marginLeft: 6,
-                    background: 'transparent',
-                    border: 0,
-                  }}
+                  style={styles.iconBtn}
+                  tabIndex={showActions ? 0 : -1}
                   onClick={(e) => {
                     e.stopPropagation();
                     setRenamingId(f.id);
@@ -449,13 +504,10 @@ function SidebarImpl(props: SidebarProps) {
               {props.onDeleteFolder && (
                 <button
                   type="button"
+                  className="sn-icon-btn sn-icon-btn--danger"
                   aria-label={`Delete folder "${f.name}"`}
-                  style={{
-                    ...styles.folderDelete,
-                    marginLeft: 6,
-                    background: 'transparent',
-                    border: 0,
-                  }}
+                  style={styles.iconBtn}
+                  tabIndex={showActions ? 0 : -1}
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onDeleteFolder?.(f);
@@ -464,15 +516,13 @@ function SidebarImpl(props: SidebarProps) {
                   <IconTrash size={13} />
                 </button>
               )}
-            </>
-          ) : (
-            <span style={countStyle}>{f.count}</span>
-          )}
+            </div>
+          </div>
         </div>
         {addingUnder === f.id && (
           <div style={{ ...styles.newFolderRow, paddingLeft: 10 + (node.depth + 1) * 14 }}>
-            <span style={{ width: 14, flexShrink: 0 }} />
-            <span style={dotStyle('var(--ink-4)')} />
+            <span style={{ width: 10, flexShrink: 0 }} />
+            <span style={{ width: 8, flexShrink: 0 }} />
             <input
               autoFocus
               style={styles.newFolderInput}
@@ -529,8 +579,9 @@ function SidebarImpl(props: SidebarProps) {
             <span>Library</span>
           </div>
           <div
+            className={navRowClass(isActiveKind('all'))}
             style={{
-              ...itemStyle(isActiveKind('all'), dense),
+              ...navRowStyle(isActiveKind('all'), dense),
               ...dropHighlight(dropTargetId === '__unfiled__'),
             }}
             onClick={() => onView({ kind: 'all' })}
@@ -541,7 +592,8 @@ function SidebarImpl(props: SidebarProps) {
             <span style={countStyle}>{props.allCount}</span>
           </div>
           <div
-            style={itemStyle(isActiveKind('pinned'), dense)}
+            className={navRowClass(isActiveKind('pinned'))}
+            style={navRowStyle(isActiveKind('pinned'), dense)}
             onClick={() => onView({ kind: 'pinned' })}
           >
             <IconPin size={15} style={{ color: isActiveKind('pinned') ? 'var(--berry)' : 'var(--ink-3)' }} />
@@ -559,7 +611,8 @@ function SidebarImpl(props: SidebarProps) {
             return (
               <div
                 key={range}
-                style={itemStyle(active, dense)}
+                className={navRowClass(active)}
+                style={navRowStyle(active, dense)}
                 onClick={() => onView({ kind: 'time', range })}
                 title={`Notes updated — ${timeRangeLabel(range)}`}
               >
@@ -577,14 +630,18 @@ function SidebarImpl(props: SidebarProps) {
           <div style={styles.sectionHead}>
             <span>Folders</span>
             {props.onAddFolder && (
-              <IconPlus
-                size={13}
-                style={{ color: 'var(--ink-4)', cursor: 'pointer' }}
+              <button
+                type="button"
+                className="sn-icon-btn"
+                aria-label="New folder"
+                style={{ ...styles.iconBtn, width: 18, height: 18 }}
                 onClick={() => {
                   setAddingUnder(null);
                   setDraftName('');
                 }}
-              />
+              >
+                <IconPlus size={12} />
+              </button>
             )}
           </div>
           {addingUnder === null && (
@@ -619,22 +676,27 @@ function SidebarImpl(props: SidebarProps) {
               <span>Tags</span>
             </div>
             <div style={styles.tagCloud}>
-              {tags.map((t) => (
-                <span
-                  key={t.id}
-                  style={tagChip(isActiveTag(t.id))}
-                  onClick={() => onView(isActiveTag(t.id) ? { kind: 'all' } : { kind: 'tag', id: t.id })}
-                >
-                  #{t.name}
-                </span>
-              ))}
+              {tags.map((t) => {
+                const active = isActiveTag(t.id);
+                return (
+                  <span
+                    key={t.id}
+                    className={active ? 'sn-tag-chip sn-tag-chip--active' : 'sn-tag-chip'}
+                    style={tagChipStyle(active)}
+                    onClick={() => onView(active ? { kind: 'all' } : { kind: 'tag', id: t.id })}
+                  >
+                    #{t.name}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}
 
         <div style={styles.section}>
           <div
-            style={itemStyle(isActiveKind('trash'), dense)}
+            className={navRowClass(isActiveKind('trash'))}
+            style={navRowStyle(isActiveKind('trash'), dense)}
             onClick={() => onView({ kind: 'trash' })}
           >
             <IconTrash size={15} style={{ color: isActiveKind('trash') ? 'var(--berry)' : 'var(--ink-3)' }} />
