@@ -324,3 +324,10 @@ export const IconBerry = (p: IconProps) => {
     </svg>
   );
 };
+
+export const IconChevronRight = (p: IconProps) => (
+  <svg {...common(p)}>
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
+

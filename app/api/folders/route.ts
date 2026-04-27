@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/auth/require';
 import { requireUserIdForApi } from '@/lib/auth/require-api';
-import { createFolder, listFolders } from '@/lib/notes/folder-service';
+import { createFolder, FolderError, listFolders } from '@/lib/notes/folder-service';
 import { preflight, withCors } from '@/lib/http/cors';
 
 /**
@@ -23,6 +23,7 @@ const CreateBody = z.object({
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
     .default('#e33d4e'),
+  parentId: z.string().uuid().nullable().optional(),
 });
 
 // POST stays session-only: folder creation is an app-UI action, not part of
@@ -35,8 +36,15 @@ export async function POST(req: Request) {
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const f = await createFolder(a.userId, parsed.data);
-  return NextResponse.json(f);
+  try {
+    const f = await createFolder(a.userId, parsed.data);
+    return NextResponse.json(f);
+  } catch (err) {
+    if (err instanceof FolderError) {
+      return NextResponse.json({ error: err.code }, { status: 400 });
+    }
+    throw err;
+  }
 }
 
 export function OPTIONS(req: Request) {

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
+import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
 
 export const metadata: Metadata = { title: 'Settings — Strawberry Notes' };
@@ -41,6 +42,7 @@ export default function SettingsPage() {
           Settings
         </h1>
       </header>
+      <TagsSection />
       <TokensSection />
       <McpClientsSection />
     </main>

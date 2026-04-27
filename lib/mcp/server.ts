@@ -13,9 +13,9 @@ import {
   removeTagFromNote,
   updateNote,
 } from '../notes/service';
-import { createFolder, listFolders } from '../notes/folder-service';
+import { createFolder, FolderError, listFolders, updateFolder } from '../notes/folder-service';
 import { listBacklinks } from '../notes/link-service';
-import { listTags } from '../notes/tag-service';
+import { deleteTag, listTags, renameTag, TagError } from '../notes/tag-service';
 
 function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }] };
@@ -206,22 +206,102 @@ export function buildMcpServer(userId: string): McpServer {
   server.registerTool(
     'create_folder',
     {
-      description: 'Create a new folder. Color is a `#rrggbb` hex string; defaults to `#e33d4e`.',
+      description:
+        'Create a new folder. Color is a `#rrggbb` hex string; defaults to `#e33d4e`. ' +
+        'Pass `parentId` to nest the folder under another one (omit or null for top level).',
       inputSchema: {
         name: z.string().min(1).max(80),
         color: z
           .string()
           .regex(/^#[0-9a-f]{6}$/i)
           .optional(),
+        parentId: z.string().uuid().nullable().optional(),
       },
     },
-    async ({ name, color }) => jsonResult(await createFolder(userId, { name, color })),
+    async ({ name, color, parentId }) => {
+      try {
+        return jsonResult(await createFolder(userId, { name, color, parentId }));
+      } catch (err) {
+        if (err instanceof FolderError) {
+          return { ...textResult(err.message), isError: true };
+        }
+        throw err;
+      }
+    },
+  );
+
+  server.registerTool(
+    'update_folder',
+    {
+      description:
+        'Update a folder. Any omitted field is left unchanged. Set `parentId` to null to lift a folder back to the top level. Errors if the move would create a cycle (a folder cannot be moved under one of its own descendants).',
+      inputSchema: {
+        id: z.string().uuid(),
+        name: z.string().min(1).max(80).optional(),
+        color: z
+          .string()
+          .regex(/^#[0-9a-f]{6}$/i)
+          .optional(),
+        position: z.number().int().min(0).optional(),
+        parentId: z.string().uuid().nullable().optional(),
+      },
+    },
+    async ({ id, name, color, position, parentId }) => {
+      try {
+        const updated = await updateFolder(userId, id, { name, color, position, parentId });
+        if (!updated) return { ...textResult('not found'), isError: true };
+        return jsonResult(updated);
+      } catch (err) {
+        if (err instanceof FolderError) {
+          return { ...textResult(err.message), isError: true };
+        }
+        throw err;
+      }
+    },
   );
 
   server.registerTool(
     'list_tags',
     { description: 'List the user’s tags with note counts.', inputSchema: {} },
     async () => jsonResult(await listTags(userId)),
+  );
+
+  server.registerTool(
+    'rename_tag',
+    {
+      description:
+        'Rename a tag. If `name` is already used by another of the user’s tags, the two are merged — every note tagged with the source ends up tagged with the existing one, and the source is deleted. Returns `{ id, merged }`: `id` is the surviving tag, `merged` flags whether a merge happened.',
+      inputSchema: {
+        id: z.string().uuid(),
+        name: z.string().min(1).max(40),
+      },
+    },
+    async ({ id, name }) => {
+      try {
+        const result = await renameTag(userId, id, name);
+        if (!result) return { ...textResult('not found'), isError: true };
+        return jsonResult(result);
+      } catch (err) {
+        if (err instanceof TagError) {
+          return { ...textResult(err.message), isError: true };
+        }
+        throw err;
+      }
+    },
+  );
+
+  server.registerTool(
+    'delete_tag',
+    {
+      description:
+        'Delete a tag. The tag is removed from every note that had it; the notes themselves are not touched.',
+      inputSchema: { id: z.string().uuid() },
+    },
+    async ({ id }) => {
+      const ok = await deleteTag(userId, id);
+      if (!ok) return { ...textResult('not found'), isError: true };
+      return jsonResult({ id, deleted: true });
+    },
   );
 
   server.registerTool(

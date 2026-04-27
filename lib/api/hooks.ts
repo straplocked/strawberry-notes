@@ -555,6 +555,7 @@ export function useCreateFolder() {
       const tempId = `tmp-${Math.random().toString(36).slice(2, 10)}`;
       const optimistic: FolderDTO = {
         id: tempId,
+        parentId: input.parentId ?? null,
         name: input.name,
         color: input.color ?? 'var(--ink-4)',
         position: (prevFolders?.length ?? 0) + 1,
@@ -579,8 +580,13 @@ export function useCreateFolder() {
 export function usePatchFolder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: { name?: string; color?: string; position?: number } }) =>
-      api.folders.patch(id, patch),
+    mutationFn: ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: { name?: string; color?: string; position?: number; parentId?: string | null };
+    }) => api.folders.patch(id, patch),
     onMutate: async ({ id, patch }) => {
       dlog('mut', 'patchFolder:onMutate', { id, patch });
       await qc.cancelQueries({ queryKey: qk.folders });
@@ -615,17 +621,37 @@ export function useDeleteFolder() {
       const prevFolders = qc.getQueryData<FolderDTO[]>(qk.folders);
       const prevLists = snapshotLists(qc);
 
+      // Compute the full descendant set so the optimistic cache mirrors what
+      // ON DELETE CASCADE does on the server. Without this, sub-folders would
+      // briefly surface as orphans at the tree root before the refetch.
+      const doomed = new Set<string>([id]);
+      let grew = true;
+      const all = prevFolders ?? [];
+      while (grew) {
+        grew = false;
+        for (const f of all) {
+          if (f.parentId && doomed.has(f.parentId) && !doomed.has(f.id)) {
+            doomed.add(f.id);
+            grew = true;
+          }
+        }
+      }
+
       qc.setQueryData<FolderDTO[]>(qk.folders, (fs) =>
-        (fs ?? []).filter((f) => f.id !== id),
+        (fs ?? []).filter((f) => !doomed.has(f.id)),
       );
 
-      // The server sets folderId to null on affected notes (ON DELETE SET NULL).
-      // Remove them from any folder-scoped list; otherwise null out folderId.
+      // The server sets folderId to null on notes whose folder gets cascade-
+      // deleted. Remove them from any folder-scoped list whose folder is in
+      // the doomed set; otherwise null out folderId.
       patchAllLists(qc, (list, viewKey) => {
-        if (viewKey === `folder:${id}`) {
-          return list.filter((n) => n.folderId !== id);
+        if (viewKey.startsWith('folder:')) {
+          const fid = viewKey.slice('folder:'.length);
+          if (doomed.has(fid)) return list.filter((n) => !doomed.has(n.folderId ?? ''));
         }
-        return list.map((n) => (n.folderId === id ? { ...n, folderId: null } : n));
+        return list.map((n) =>
+          n.folderId && doomed.has(n.folderId) ? { ...n, folderId: null } : n,
+        );
       });
 
       return { prevFolders, prevLists };
@@ -637,6 +663,41 @@ export function useDeleteFolder() {
     },
     onSuccess: () => {
       dlog('mut', 'deleteFolder:success');
+    },
+  });
+}
+
+/**
+ * Rename or merge a tag. The server returns `{ id, merged }` where `id` is
+ * the surviving tag's id (the original on a pure rename, the existing
+ * conflicting tag's on merge). On merge, every cached note that referenced
+ * the source tag id needs the new id substituted, so we invalidate widely
+ * — this is a rare admin-style action, eager refetch is acceptable.
+ */
+export function usePatchTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.tags.patch(id, { name }),
+    onSuccess: () => {
+      dlog('mut', 'patchTag:success');
+      qc.invalidateQueries({ queryKey: qk.tags });
+      // A merge changes the tagIds on every affected note; pure rename
+      // doesn't, but the cost of one extra invalidate is trivial.
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['note'] });
+    },
+  });
+}
+
+export function useDeleteTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.tags.delete(id),
+    onSuccess: () => {
+      dlog('mut', 'deleteTag:success');
+      qc.invalidateQueries({ queryKey: qk.tags });
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['note'] });
     },
   });
 }
