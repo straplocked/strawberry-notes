@@ -5,6 +5,31 @@
 
 ---
 
+## Run 5 — 2026-04-27
+
+**Summary:** Sync the docs to v1.3 Tier 3 + the sidebar craft pass. Three product-shaped changes drove most of the diff: nested folders (`folders.parent_id` + tree UI), tag rename / merge / delete UI in Settings, and a `pg_trgm` index speeding the `[[`-autocomplete substring scan. A follow-up craft pass turned hover legibility from "stack of small defaults" into a coherent rest → hover → active progression and made the folder dot a clickable colour picker. The leadership/roadmap.md was already updated in the implementation PR (#22) — this run propagates the changes to every other affected doc.
+
+**Files modified:**
+
+- `docs/technical/database.md` — `folders.parentId` self-FK + `folders_parent_idx`; nested-folder cycle-prevention note. New `note_links` table section. `notes` table gains explicit rows for `snippet`, `hasImage`, `contentEmbedding`, `embeddingStale` (previously buried in a sub-table). New `notes_title_trgm_idx`, `notes_user_trashed_idx` rows in the index list. Migration list extended through `0007_nested_folders.sql`; `0004_embeddings.sql` corrected to `0005`. Relations diagram gains the self-FK and `note_links` edge. Lifecycle notes rewritten for tag delete-vs-merge and folder cascade-of-subtree behaviour.
+- `docs/technical/api-reference.md` — `POST /api/folders` body gains `parentId`. `PATCH /api/folders/:id` documents `parentId` reparenting + `parent-cycle` error. `DELETE /api/folders/:id` updated to mention subtree cascade. New **`PATCH /api/tags/:id`** (rename + merge with `{ id, merged }` response) and **`DELETE /api/tags/:id`** sections. `GET /api/notes/titles` description updated to reference the trigram index instead of the open-todo. DTO Shapes gains a "v1.3" subsection for `FolderDTO.parentId` and the tag-patch response shape.
+- `docs/technical/mcp.md` — Tool reference table gains `update_folder`, `rename_tag`, `delete_tag`. `create_folder` row updated for the new `parentId` parameter. `list_folders` row notes that the response now carries `parentId` for tree reconstruction.
+- `docs/technical/frontend.md` — Component map line counts refreshed (Sidebar.tsx ~880, Editor.tsx ~700, AppShell.tsx ~620 — all grew significantly). Roles updated: Sidebar describes the nested-folder tree, hover actions, drop zones, and colour picker; AppShell describes the mobile pane state machine and folder-colour-change handler. New `components/app/settings/` sub-table covering `TokensSection`, `TagsSection`, `McpClientsSection`. Hooks list expanded with the time-range, counts, titles, backlinks queries and the new `usePatchTag` / `useDeleteTag` mutations; `useDeleteFolder` cascade-aware optimistic update called out. Styling section now documents the `sn-*` class system in `globals.css` for state-dependent paint that inline styles can't express.
+- `docs/technical/architecture.md` — Routing table updated end-to-end: added `/settings` page; added `/api/notes/counts`, `/api/notes/titles`, `/api/notes/search/semantic`, `/api/notes/[id]/backlinks`, `/api/export/all.zip`, `/api/tags/[id]`, `/api/attachments/gc`, `/api/tokens`, `/api/tokens/[id]`, `/api/mcp`. The signup row now mentions the env gate.
+- `docs/user/features.md` — Folders section rewritten for nested folders (hover + → add sub-folder; chevron collapse/expand; coloured dot identity at top level only) and the new colour-picker affordance (six accent swatches). Tags section gains a "Rename / merge / delete" bullet pointing at Settings → Tags. MCP tool list updated with `rename_tag` / `delete_tag`.
+- `DOC_UPDATE.md` — Run counter 4 → 5; last-run date 2026-04-27.
+
+**Files added:** none — every change is an edit to existing docs.
+
+**Notes:**
+
+- Doc-only run; no code changed.
+- All modified files remain under their split thresholds. `api-reference.md` is now ~370 lines (was ~310) — still under the 400-line threshold but worth flagging as next in line for a split if it grows further. Natural seams would be **Auth · Notes · Folders · Tags · Uploads · Tokens · MCP**.
+- The nested-folder DELETE cascades the entire subtree of folders — this is documented in three places now (database.md lifecycle notes, api-reference.md DELETE section, user features.md). Reviewers should ensure those stay aligned.
+- The `usePatchFolder` / `usePatchTag` patch surface is the single source of truth for the optimistic invalidation behaviour. Hooks and api-reference are kept in lockstep deliberately — change one, the diff highlights the other.
+
+---
+
 ## Run 4 — 2026-04-24
 
 **Summary:** Repositioned the docs to match v1.2's class-leader shape. The notebook-core "boringly good at being a notebook" framing has been replaced with the **class-leader thesis**: *the self-hosted notebook with a first-class AI + agent interface.* All three audience tiers now surface wiki-links + backlinks, semantic search (pgvector + OpenAI-compatible embeddings), full-workspace ZIP export, attachment GC, the browser web clipper, and the expanded MCP tool set — each with non-bloat justification.

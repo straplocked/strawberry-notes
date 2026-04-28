@@ -4,6 +4,8 @@
 
 A guided tour of what you can actually *do*.
 
+**On this page:** [Time filters](#time-filters) · [Folders](#folders) · [Tags](#tags) · [Pinning](#pinning) · [Wiki-Links & Backlinks](#wiki-links--backlinks) · [Search](#search) · [Trash](#trash-soft-delete) · [Checklists](#checklists) · [Images](#images) · [Markdown Export & Import](#markdown-export--import) · [Themes & Accents](#themes--accents) · [PWA / Offline](#pwa--offline) · [Browser Web Clipper](#browser-web-clipper) · [Connecting an AI assistant (MCP)](#connecting-an-ai-assistant-mcp) · [Keyboard Shortcuts](#keyboard-shortcuts) · [What's Not Here](#whats-not-here-yet)
+
 ---
 
 ## Time filters
@@ -25,9 +27,10 @@ A brand-new note shows up in **Today** immediately (and in Past 7 / 30) — ther
 
 - Every note can sit in one folder, or in none (the "All notes" view).
 - Folders are yours only — no one else sees them.
-- Each folder has a colour — click it in the sidebar to edit.
+- **Nested folders.** Hover any folder in the sidebar and click the **+** button to create a sub-folder under it. Click the chevron to collapse / expand a subtree. Top-level folders carry a coloured dot for identity; sub-folders inherit identity from the parent.
+- **Folder colour.** Click the coloured dot on any top-level folder to open a swatch popover. Pick one of the six accents (Strawberry, Leaf, Jam, Cherry, Mint, Ink blue) to commit; click outside or press Escape to dismiss.
 - The `Journal` folder and a `Welcome to Strawberry Notes` note are created automatically on signup; feel free to rename, delete, or trash them.
-- Deleting a folder **doesn't delete its notes** — they move to "All notes".
+- **Deleting a folder** removes the folder *and any nested sub-folders* below it. The notes inside don't disappear — they fall back to "All notes".
 
 ---
 
@@ -40,7 +43,8 @@ The chip row above each note's title is also where you tag it.
 - **Normalisation.** Names are lowercased, trimmed, capped at 40 characters, and de-duplicated against the rest of the note's tags.
 - **No setup needed.** New tags are created the first time they're used.
 - **Sidebar.** The Tags section shows a cloud with counts. Click a tag to filter the note list to everything that carries it.
-- **Agents.** The same `tagNames` field is exposed on `PATCH /api/notes/:id` and on the MCP `update_note`, `add_tag`, and `remove_tag` tools.
+- **Rename / merge / delete.** Open **Settings → Tags** for the full library. Inline-rename a tag in place; renaming to a name that already exists prompts to *merge* the two (every note tagged with the source ends up tagged with the existing one, and the source disappears). Delete removes the tag from every note; the notes themselves are untouched.
+- **Agents.** The same `tagNames` field is exposed on `PATCH /api/notes/:id` and on the MCP `update_note`, `add_tag`, `remove_tag`, `rename_tag`, and `delete_tag` tools.
 
 Tags and folders are independent — a note can be in a folder *and* have tags.
 

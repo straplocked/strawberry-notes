@@ -49,11 +49,14 @@ All tools act on the authenticated user. Cross-user access is structurally impos
 | `create_note`          | `folderId?`, `title?`, `markdown?`, `tagNames?`                                                 | Created note summary.                             |
 | `update_note`          | `id`, `title?`, `markdown?`, `folderId?`, `pinned?`, `tagNames?`, `trashed?`                    | Updated note summary.                             |
 | `delete_note`          | `id`, `hard?` (default `false` — soft delete / Trash)                                           | `{ id, deleted: "soft" \| "hard" }`.             |
-| `list_folders`         | —                                                                                               | Array of folders with counts.                     |
-| `create_folder`        | `name`, `color?` (`#rrggbb`)                                                                    | Created folder.                                   |
+| `list_folders`         | —                                                                                               | Array of folders with counts and `parentId` for nesting. |
+| `create_folder`        | `name`, `color?` (`#rrggbb`), `parentId?` (uuid \| null)                                        | Created folder. `parentId` nests under another folder; omit / null for top-level. |
+| `update_folder`        | `id`, `name?`, `color?`, `position?`, `parentId?`                                               | Updated folder. Errors with `parent-cycle` if the move would close a cycle. |
 | `list_tags`            | —                                                                                               | Array of tags with counts.                        |
 | `add_tag`              | `noteId`, `name`                                                                                | `{ noteId, tagId }`. Idempotent.                 |
 | `remove_tag`           | `noteId`, `name`                                                                                | `{ noteId, name }`. Idempotent.                  |
+| `rename_tag`           | `id`, `name`                                                                                    | `{ id, merged }` — pure rename, or merge into an existing tag if the name collides. |
+| `delete_tag`           | `id`                                                                                            | `{ id, deleted: true }`. Removes the tag from every note. |
 | `get_backlinks`        | `id`                                                                                            | Notes that link to this one via `[[Title]]`, newest-updated first. Useful for graph traversal. |
 | `export_note_markdown` | `id`                                                                                            | Plain Markdown text of the note.                  |
 
