@@ -256,6 +256,12 @@ export function AppShell() {
     patchFolder.mutate({ id: folder.id, patch: { name } });
   }
 
+  function onChangeFolderColor(folder: FolderDTO, hex: string) {
+    if (folder.color.toLowerCase() === hex.toLowerCase()) return;
+    dlog('ui', 'click: change folder colour', { id: folder.id, from: folder.color, to: hex });
+    patchFolder.mutate({ id: folder.id, patch: { color: hex } });
+  }
+
   function confirmDeleteFolder(folder: FolderDTO) {
     dlog('ui', 'click: delete folder', { id: folder.id, name: folder.name });
     // Capture the doomed subtree before the mutation removes it from cache,
@@ -436,6 +442,7 @@ export function AppShell() {
       onAddFolder={onAddFolder}
       onDeleteFolder={onRequestDeleteFolder}
       onRenameFolder={onRenameFolder}
+      onChangeFolderColor={onChangeFolderColor}
       onSignOut={onSignOut}
       onMoveNoteToFolder={onMoveNoteToFolder}
       fullWidth={isMobile}

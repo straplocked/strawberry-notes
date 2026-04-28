@@ -254,3 +254,21 @@ body {
   color: var(--berry);
   border-color: var(--berry);
 }
+
+/* Folder colour-dot button. The dot itself stays the same size; the button
+ * around it grows a faint hover ring so the affordance is discoverable. */
+.sn-dot-btn {
+  transition: background 80ms ease-out;
+}
+.sn-dot-btn:hover,
+.sn-dot-btn[aria-expanded='true'] {
+  background: var(--surface-3);
+}
+
+/* Colour swatch in the folder colour popover. */
+.sn-swatch {
+  transition: transform 80ms ease-out;
+}
+.sn-swatch:hover {
+  transform: scale(1.12);
+}
