@@ -10,9 +10,9 @@
 
 | Metric       | Value        |
 | ------------ | ------------ |
-| Total runs   | **4**        |
+| Total runs   | **5**        |
 | First run    | 2026-04-18   |
-| Last run     | 2026-04-24   |
+| Last run     | 2026-04-27   |
 
 > Increment `Total runs` and update `Last run` on every invocation. Record the actual changes
 > made during that run in [docs/CHANGELOG.md](docs/CHANGELOG.md), not here.

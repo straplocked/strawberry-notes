@@ -24,16 +24,26 @@ Postgres 16, accessed via Drizzle ORM (`drizzle-orm` + `drizzle-kit`).
 
 ### `folders`
 
-| Column      | Type         | Notes                                |
-| ----------- | ------------ | ------------------------------------ |
-| `id`        | `uuid` PK    |                                      |
-| `userId`    | `uuid` FK    | → `users.id` ON DELETE CASCADE       |
-| `name`      | `text`       |                                      |
-| `color`     | `text`       | hex (`#e33d4e` default)              |
-| `position`  | `integer`    | for manual ordering                  |
-| `createdAt` | `timestamptz`|                                      |
+| Column      | Type         | Notes                                                           |
+| ----------- | ------------ | --------------------------------------------------------------- |
+| `id`        | `uuid` PK    |                                                                 |
+| `userId`    | `uuid` FK    | → `users.id` ON DELETE CASCADE                                  |
+| `parentId`  | `uuid` FK?   | → `folders.id` ON DELETE CASCADE — self-FK for nested folders   |
+| `name`      | `text`       |                                                                 |
+| `color`     | `text`       | hex (`#e33d4e` default); user-editable via the sidebar dot picker |
+| `position`  | `integer`    | for manual ordering                                             |
+| `createdAt` | `timestamptz`|                                                                 |
 
-Indexes: `folders_user_idx` on `(userId, position)`.
+Indexes:
+- `folders_user_idx` on `(userId, position)`.
+- `folders_parent_idx` on `(parentId)` — speeds tree-walk queries.
+
+`parentId IS NULL` for top-level folders. `ON DELETE CASCADE` on the self-FK
+means deleting a parent removes the entire subtree of folders; the existing
+`notes.folderId ON DELETE SET NULL` then takes care of any notes inside that
+subtree (they fall back to the "All Notes" view). Cycle prevention is enforced
+in `lib/notes/folder-service.ts` (`assertParentLegal`) — Postgres has no
+native check for cycles in a recursive FK.
 
 ### `notes`
 
@@ -45,23 +55,22 @@ Indexes: `folders_user_idx` on `(userId, position)`.
 | `title`       | `text`        |                                                          |
 | `content`     | `jsonb`       | ProseMirror document (source of truth)                   |
 | `contentText` | `text`        | flattened plain text mirror (for search / list snippets) |
+| `snippet`     | `text`        | Precomputed first non-empty prose line (≤ ~180 chars). Server-maintained on save. |
+| `hasImage`    | `boolean`     | Precomputed flag — true when the doc embeds at least one image. |
 | `pinned`      | `boolean`     | default `false`                                          |
 | `trashedAt`   | `timestamptz?`| NULL unless soft-deleted                                 |
+| `contentEmbedding` | `vector(N)` | pgvector embedding; populated by the worker. `N = EMBEDDING_DIMS`. |
+| `embeddingStale`   | `boolean`   | True until the worker has embedded the current content. Set on every content/title edit. |
 | `createdAt`   | `timestamptz` |                                                          |
 | `updatedAt`   | `timestamptz` | bumped on every PATCH                                    |
 
 Indexes:
 - `notes_user_folder_idx` on `(userId, folderId, updatedAt)` — folder view.
 - `notes_user_pinned_idx` on `(userId, pinned, updatedAt)` — pinned view.
-- FTS: see [Full-text search](#full-text-search) below.
-- `notes_content_embedding_idx` — IVFFlat on `content_embedding` with `vector_cosine_ops`. See [Semantic search](#semantic-search) below. Optional; only populated when the feature is configured.
-
-Additional columns (`0004_embeddings.sql`):
-
-| Column              | Type            | Notes                                                         |
-| ------------------- | --------------- | ------------------------------------------------------------- |
-| `content_embedding` | `vector(N)`     | Populated by the in-process embedding worker. N = `EMBEDDING_DIMS`. |
-| `embedding_stale`   | `boolean`       | True until the worker has embedded the current content. Set on every content or title edit. |
+- `notes_user_trashed_idx` on `(userId, trashedAt, updatedAt DESC)` — trash view.
+- `notes_content_tsv_idx` — GIN over the `content_tsv` generated tsvector column. See [Full-text search](#full-text-search) below.
+- `notes_title_trgm_idx` — GIN over `title` using `gin_trgm_ops` (pg_trgm). Speeds the `[[`-autocomplete ILIKE substring scan into the thousands of notes per user.
+- `notes_content_embedding_idx` — IVFFlat on `content_embedding` with `vector_cosine_ops`. Only populated when the feature is configured.
 
 ### `tags`
 
@@ -82,6 +91,19 @@ Uniqueness is per-user (`(userId, name)`) and enforced by upsert logic in `lib/n
 | `tagId`  | `uuid` FK | → `tags.id` ON DELETE CASCADE      |
 
 Primary key: `(noteId, tagId)`. Index: `note_tags_tag_idx` on `(tagId)` for reverse lookup.
+
+### `note_links` (wiki-link graph)
+
+| Column        | Type      | Notes                                                                |
+| ------------- | --------- | -------------------------------------------------------------------- |
+| `sourceId`    | `uuid` FK | → `notes.id` ON DELETE CASCADE — note containing the `[[Title]]`.    |
+| `targetId`    | `uuid` FK?| → `notes.id` ON DELETE SET NULL — null while the title is unresolved.|
+| `targetTitle` | `text`    | Lowercased target title, kept so unresolved rows can re-bind later.  |
+
+Primary key: `(sourceId, targetTitle)`. Indexes: `note_links_target_idx` on
+`(targetId)` for backlink lookup; `note_links_title_idx` on `(targetTitle)`
+for the resolve-pending sweep when a note's title changes or a new note is
+created. See [editor.md](editor.md) for the resolution flow.
 
 ### `attachments`
 
@@ -104,11 +126,14 @@ Primary key: `(noteId, tagId)`. Index: `note_tags_tag_idx` on `(tagId)` for reve
 users ──┬── folders          (1:N, cascade)
         ├── notes            (1:N, cascade)
         ├── tags             (1:N, cascade)
-        └── attachments      (1:N, cascade)
+        ├── attachments      (1:N, cascade)
+        └── api_tokens       (1:N, cascade)
 
+folders ── folders           (self-FK, cascade — nested folder tree)
 folders ── notes             (1:N, set null on folder delete)
 
 notes ──┬── note_tags ── tags  (M:N)
+        ├── note_links ── notes  (graph; source cascades, target set null)
         └── attachments      (1:N, set null on note delete)
 ```
 
@@ -119,10 +144,13 @@ notes ──┬── note_tags ── tags  (M:N)
 Generated into `drizzle/`:
 
 - `0000_nebulous_colonel_america.sql` — base schema.
-- `0001_fts.sql` — full-text search setup.
-- `0002_api_tokens.sql` — personal access tokens.
-- `0003_perf_columns.sql` — precomputed snippet + has-image columns.
-- `0004_embeddings.sql` — pgvector extension, `content_embedding` column, IVFFlat index.
+- `0001_fts.sql` — `content_tsv` generated column + GIN index.
+- `0002_api_tokens.sql` — personal access tokens (`api_tokens`).
+- `0003_perf_columns.sql` — precomputed `snippet` + `has_image` columns.
+- `0004_note_links.sql` — `note_links` table for the wiki-link graph.
+- `0005_embeddings.sql` — pgvector extension, `content_embedding` column, IVFFlat index.
+- `0006_title_trgm.sql` — `pg_trgm` extension + GIN index on `notes.title`.
+- `0007_nested_folders.sql` — `folders.parent_id` self-FK + `folders_parent_idx`.
 
 Workflow:
 
@@ -150,7 +178,7 @@ The 500-item list cap is hardcoded in that route handler — raise it there if n
 
 ## Semantic Search
 
-`0004_embeddings.sql` enables the `vector` extension (from the `pgvector/pgvector:pg16` image) and adds a `content_embedding vector(N)` column plus an IVFFlat cosine index.
+`0005_embeddings.sql` enables the `vector` extension (from the `pgvector/pgvector:pg16` image) and adds a `content_embedding vector(N)` column plus an IVFFlat cosine index.
 
 - **Population path.** `lib/notes/service.ts` sets `embedding_stale = true` on every content or title edit and calls `kickEmbeddingWorker()`. The worker (`lib/embeddings/worker.ts`) pulls up to 16 stale rows with `SELECT … FOR UPDATE SKIP LOCKED`, embeds them via the OpenAI-compatible client, and writes the vectors back.
 - **Safe under N replicas.** `SKIP LOCKED` means two replicas pulling concurrently never collide; each row is processed exactly once.
@@ -177,6 +205,6 @@ The pool size is a sensible default for a self-hosted personal/team deployment. 
 ## Data Lifecycle Notes
 
 - **Soft delete:** `DELETE /api/notes/[id]` currently hard-deletes; the "trash" view is populated by PATCHing `trashedAt` to `now()`. Soft-deleted notes are excluded from FTS results.
-- **Tag cleanup:** Deleting a tag removes `note_tags` rows via cascade but leaves the tag row unless the user deletes it explicitly. Empty tags drop out of the list endpoint's count naturally.
-- **Folder delete:** Notes survive (their `folderId` becomes NULL and they appear under "All notes").
+- **Tag cleanup:** `DELETE /api/tags/:id` removes the tag row and its `note_tags` rows via cascade — the notes themselves survive. Renaming a tag to an existing name (`PATCH /api/tags/:id`) performs a *merge*: every `note_tags` row pointing at the source is rewritten to the existing tag (`INSERT … ON CONFLICT DO NOTHING`), then the source row is dropped. Empty tags drop out of the list endpoint's count naturally.
+- **Folder delete:** The folder's notes survive (their `folderId` becomes NULL and they appear under "All notes"). With nested folders, deleting a parent cascade-deletes every descendant folder; notes inside the cascaded subtree all fall back to "All notes".
 - **User delete:** There is no self-serve user-delete path in v1. An operator can `DELETE FROM users WHERE id = ...`; cascades clean up all child rows and any orphaned files on disk should be reaped manually (see [uploads.md](uploads.md)).

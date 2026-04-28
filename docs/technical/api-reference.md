@@ -122,9 +122,9 @@ Empty array is normal when nothing links here.
 Lightweight typeahead used by the editor's `[[` autocomplete popup. Returns up
 to 20 `{id, title}` rows for the current user's live (non-trashed) notes whose
 title matches `q` (case-insensitive substring). Blank `q` returns the most
-recently updated 20. Uses ILIKE — no supporting index in v1.2; see the
-candidates list in [../leadership/roadmap.md](../leadership/roadmap.md) for the
-`pg_trgm` follow-up.
+recently updated 20. Backed by a `pg_trgm` GIN index on `notes.title`
+(`drizzle/0006_title_trgm.sql`); the planner picks it up automatically once
+the row count makes the trigram lookup faster than a sequential scan.
 
 ### `POST /api/notes/search/semantic`
 
@@ -231,18 +231,31 @@ Responds to `OPTIONS` (CORS preflight). `POST` remains session-only.
 
 Request:
 ```json
-{ "name": "My folder", "color": "#e33d4e" }
+{ "name": "My folder", "color": "#e33d4e", "parentId": "<uuid>|null" }
 ```
 
-`color` defaults to `#e33d4e` (strawberry accent) if omitted. Returns the new `FolderDTO`.
+`color` defaults to `#e33d4e` (strawberry accent) if omitted. `parentId`
+nests the new folder under another (must belong to the same user); omit or
+pass `null` for a top-level folder. Returns the new `FolderDTO`.
+
+Errors: `400 { error: "parent-not-found" }` if `parentId` doesn't resolve to one
+of the user's folders.
 
 ### `PATCH /api/folders/:id`
 
-Partial update: `name`, `color`, `position`.
+Partial update: `name`, `color`, `position`, `parentId`.
+
+Setting `parentId` reparents the folder. The server walks the proposed
+parent's ancestor chain and rejects the change with `400 { error: "parent-cycle" }`
+if it would close a cycle (a folder cannot be moved under one of its own
+descendants). Pass `parentId: null` to lift the folder back to the top
+level.
 
 ### `DELETE /api/folders/:id`
 
-Deletes the folder. Notes previously in it survive with `folderId = NULL` (i.e. appear under "All notes").
+Deletes the folder **and the entire subtree of nested folders below it**
+(via the self-FK's `ON DELETE CASCADE`). Notes inside any of the deleted
+folders survive with `folderId = NULL` (they appear under "All notes").
 
 ---
 
@@ -253,6 +266,33 @@ Deletes the folder. Notes previously in it survive with `folderId = NULL` (i.e. 
 All tags for the user, each with a `count` of associated non-trashed notes. Ordered `count DESC, name ASC`.
 
 Tags are created implicitly via `PATCH /api/notes/:id` with `tagNames`. There is no direct tag-create endpoint in v1.
+
+### `PATCH /api/tags/:id`
+
+Rename or merge a tag.
+
+Request:
+```json
+{ "name": "new-name" }
+```
+
+The new name is normalised (trimmed + lowercased + ≤40 chars). Behaviour:
+
+- If no other tag of the user has the new name, the row is renamed in place.
+- If the new name collides with an existing tag, the two are **merged**:
+  every `note_tags` row pointing at the source tag is rewritten to the
+  existing one (`INSERT … ON CONFLICT DO NOTHING` handles notes that
+  already had both), then the source row is dropped.
+
+Response: `{ "id": "<surviving-tag-uuid>", "merged": <bool> }` — `id` equals
+the original on a pure rename and the existing target's id on a merge;
+`merged` flags which path ran. Errors: `400 { error: "invalid-name" }`,
+`404` if the id doesn't belong to the user.
+
+### `DELETE /api/tags/:id`
+
+Delete a tag. Cascade removes every `note_tags` row that referenced it; the
+notes themselves are untouched. Returns `{ ok: true }` or `404`.
 
 ---
 
@@ -348,3 +388,8 @@ Notable shapes added in v1.2:
 - `BacklinkDTO` — `{ id, title, snippet, updatedAt }`. Returned by `GET /api/notes/:id/backlinks`.
 - Semantic search result — `NoteListItemDTO & { score: number }` where `score` is cosine similarity in `[0, 1]`.
 - `{ id, title }[]` — returned by `GET /api/notes/titles` (the typeahead shape; intentionally minimal so a keystroke-per-character popup stays cheap).
+
+Notable shapes updated in v1.3:
+
+- `FolderDTO` — gains `parentId: string | null` for nested-folder support. Top-level folders carry `parentId: null`. The client builds the tree from this flat list (`buildFolderTree` in `components/app/Sidebar.tsx`).
+- `PATCH /api/tags/:id` response — `{ id: string, merged: boolean }`. The surviving tag's id (same as input on a pure rename, the existing tag's id on merge) plus a flag telling the client whether memberships got rewritten.

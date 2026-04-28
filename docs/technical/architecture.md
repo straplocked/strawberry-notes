@@ -36,25 +36,36 @@ No separate API server; Next.js is the whole backend.
 
 All user-facing routing lives in `app/`:
 
-| Path                      | Type            | Purpose                                                                 |
-| ------------------------- | --------------- | ----------------------------------------------------------------------- |
-| `app/page.tsx`            | Page            | Root — redirects to `/notes`.                                           |
-| `app/(auth)/login`        | Page            | Credentials sign-in form.                                               |
-| `app/(auth)/signup`       | Page            | New-account form; auto-creates a default "Journal" folder.              |
-| `app/(app)/notes`         | Page            | Main 3-pane shell (sidebar / note list / editor).                       |
-| `app/(app)/layout.tsx`    | Layout          | Calls `auth()`; redirects unauthenticated users to `/login`.            |
-| `app/api/auth/[...nextauth]` | Route handler | Auth.js NextAuth endpoints.                                           |
-| `app/api/auth/signup`     | Route handler   | Custom signup endpoint (credentials + default folder creation).         |
-| `app/api/notes`           | Route handler   | List / create notes.                                                    |
-| `app/api/notes/[id]`      | Route handler   | Get / patch / delete single note.                                       |
-| `app/api/notes/[id]/export.md` | Route handler | Export note as Markdown.                                             |
-| `app/api/notes/import`    | Route handler   | Import one or more `.md` files.                                         |
-| `app/api/folders`         | Route handler   | List / create folders.                                                  |
-| `app/api/folders/[id]`    | Route handler   | Patch / delete folder.                                                  |
-| `app/api/tags`            | Route handler   | List tags with counts.                                                  |
-| `app/api/uploads`         | Route handler   | Upload image attachment.                                                |
-| `app/api/uploads/[id]`    | Route handler   | Serve attachment (ownership-checked).                                   |
-| `app/manifest.ts`         | Metadata route  | Emits PWA `manifest.webmanifest`.                                       |
+| Path                            | Type            | Purpose                                                                 |
+| ------------------------------- | --------------- | ----------------------------------------------------------------------- |
+| `app/page.tsx`                  | Page            | Root — redirects to `/notes`.                                           |
+| `app/(auth)/login`              | Page            | Credentials sign-in form.                                               |
+| `app/(auth)/signup`             | Page            | New-account form (404s when `ALLOW_PUBLIC_SIGNUP` is unset / false).    |
+| `app/(app)/notes`               | Page            | Main 3-pane shell (sidebar / note list / editor).                       |
+| `app/(app)/settings`            | Page            | Settings — Tags rename/merge, Personal Access Tokens, MCP client config. |
+| `app/(app)/layout.tsx`          | Layout          | Calls `auth()`; redirects unauthenticated users to `/login`.            |
+| `app/api/auth/[...nextauth]`    | Route handler   | Auth.js NextAuth endpoints.                                             |
+| `app/api/auth/signup`           | Route handler   | Custom signup endpoint (gated, rate-limited, seeds `Journal` + Welcome note). |
+| `app/api/notes`                 | Route handler   | List / create notes.                                                    |
+| `app/api/notes/counts`          | Route handler   | Top-level counts (all / pinned / trash) for sidebar badges.             |
+| `app/api/notes/titles`          | Route handler   | `[[`-autocomplete typeahead (pg_trgm-backed).                           |
+| `app/api/notes/search/semantic` | Route handler   | Semantic (pgvector) search; bearer-auth-capable.                        |
+| `app/api/notes/import`          | Route handler   | Import `.md` files (multipart) or a JSON Markdown blob (web clipper).    |
+| `app/api/notes/[id]`            | Route handler   | Get / patch / delete single note.                                       |
+| `app/api/notes/[id]/export.md`  | Route handler   | Export note as Markdown.                                                |
+| `app/api/notes/[id]/backlinks`  | Route handler   | Notes that link here via `[[Title]]`.                                   |
+| `app/api/export/all.zip`        | Route handler   | Streams a full-workspace zip (`?includeTrash=1` to keep soft-deleted). |
+| `app/api/folders`               | Route handler   | List / create folders. Bearer-capable on GET (extension folder picker). |
+| `app/api/folders/[id]`          | Route handler   | Patch (name / colour / position / parent) or delete folder + subtree.   |
+| `app/api/tags`                  | Route handler   | List tags with counts.                                                  |
+| `app/api/tags/[id]`             | Route handler   | Rename (with merge) or delete a tag.                                    |
+| `app/api/uploads`               | Route handler   | Upload image attachment.                                                |
+| `app/api/uploads/[id]`          | Route handler   | Serve attachment (ownership-checked).                                   |
+| `app/api/attachments/gc`        | Route handler   | Sweep orphaned attachments (5-minute grace window).                     |
+| `app/api/tokens`                | Route handler   | List / create Personal Access Tokens (session-only; mints `snb_…`).     |
+| `app/api/tokens/[id]`           | Route handler   | Revoke a token.                                                         |
+| `app/api/mcp`                   | Route handler   | Model Context Protocol server (bearer-only, stateless JSON-RPC).        |
+| `app/manifest.ts`               | Metadata route  | Emits PWA `manifest.webmanifest`.                                       |
 
 Route groups:
 
