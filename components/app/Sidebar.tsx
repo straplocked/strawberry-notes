@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { memo, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import {
   IconAll,
@@ -149,6 +149,42 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'flex-end',
     flexShrink: 0,
   },
+  // Wraps the colour dot. Layout-only — `.sn-dot-btn` in globals.css owns
+  // the hover ring so the dot's interactive affordance is discoverable
+  // without growing the chevron+dot leading group.
+  dotBtn: {
+    width: 16,
+    height: 16,
+    display: 'grid',
+    placeItems: 'center',
+    border: 0,
+    background: 'transparent',
+    padding: 0,
+    margin: '0 -4px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  // Inline swatch popover under a folder row. Lives in normal flow (no
+  // portal) so it scrolls with the sidebar and doesn't escape the rail's
+  // overflow:hidden. The 6 accent swatches at 18×18 cover the row's
+  // available width with breathing room.
+  colorPopover: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 10px 8px',
+    flexWrap: 'wrap',
+  },
+  swatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    border: 0,
+    cursor: 'pointer',
+    padding: 0,
+    flexShrink: 0,
+  },
 };
 
 /**
@@ -232,6 +268,7 @@ export interface SidebarProps {
   onAddFolder?: (input: { name: string; color: string; parentId: string | null }) => void;
   onDeleteFolder?: (folder: FolderDTO) => void;
   onRenameFolder?: (folder: FolderDTO, name: string) => void;
+  onChangeFolderColor?: (folder: FolderDTO, hex: string) => void;
   onSignOut?: () => void;
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
   fullWidth?: boolean;
@@ -291,8 +328,36 @@ function SidebarImpl(props: SidebarProps) {
   // the user across reloads, and the sidebar is small enough that re-expand
   // is a single click.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // Folder id whose color picker is currently open. Click the dot to open
+  // (it's the only affordance — the dot is *both* a folder identity marker
+  // and a control for changing that identity).
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null);
   // Drop-target id: a folder uuid, '__unfiled__' for the "All Notes" row, or null.
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // Close the colour picker on outside click or Escape. Capture-phase mousedown
+  // so the picker dismisses *before* any underlying row's onClick fires (e.g.
+  // clicking another folder's dot should switch the picker, not toggle the
+  // newly-opened picker shut).
+  useEffect(() => {
+    if (!colorPickerId) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest('[data-folder-color-popover]')) return;
+      if (t.closest('[data-folder-dot-btn]')) return;
+      setColorPickerId(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setColorPickerId(null);
+    };
+    document.addEventListener('mousedown', onMouseDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [colorPickerId]);
 
   const makeDropHandlers = (id: string, folderId: string | null) => {
     if (!props.onMoveNoteToFolder) return {};
@@ -438,7 +503,25 @@ function SidebarImpl(props: SidebarProps) {
             ) : (
               <span style={{ width: 12, flexShrink: 0 }} />
             )}
-            {showDot && <span style={dotStyle(f.color)} />}
+            {showDot &&
+              (props.onChangeFolderColor ? (
+                <button
+                  type="button"
+                  data-folder-dot-btn
+                  className="sn-dot-btn"
+                  aria-label={`Change colour for "${f.name}"`}
+                  aria-expanded={colorPickerId === f.id}
+                  style={styles.dotBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setColorPickerId((prev) => (prev === f.id ? null : f.id));
+                  }}
+                >
+                  <span style={dotStyle(f.color)} />
+                </button>
+              ) : (
+                <span style={dotStyle(f.color)} />
+              ))}
           </div>
           <span
             style={{
@@ -534,6 +617,41 @@ function SidebarImpl(props: SidebarProps) {
             </div>
           </div>
         </div>
+        {colorPickerId === f.id && props.onChangeFolderColor && (
+          <div
+            data-folder-color-popover
+            role="group"
+            aria-label={`Colour for "${f.name}"`}
+            style={{ ...styles.colorPopover, paddingLeft: 10 + indent + 16 }}
+          >
+            {ACCENTS.map((a) => {
+              const selected = f.color.toLowerCase() === a.hex.toLowerCase();
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="sn-swatch"
+                  aria-label={a.name}
+                  aria-pressed={selected}
+                  title={a.name}
+                  style={{
+                    ...styles.swatch,
+                    background: a.hex,
+                    boxShadow: selected
+                      ? '0 0 0 2px var(--surface-2), 0 0 0 4px currentColor'
+                      : 'none',
+                    color: selected ? 'var(--ink-2)' : undefined,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onChangeFolderColor?.(f, a.hex);
+                    setColorPickerId(null);
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
         {addingUnder === f.id && (
           <div
             style={{
