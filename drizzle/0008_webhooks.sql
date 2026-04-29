@@ -1,21 +1,15 @@
--- Outbound webhooks. Each row is one delivery target owned by one user.
--- The `events` text[] holds the event names (e.g. "note.created") this
--- webhook subscribes to; firing checks `events && ARRAY['note.created']`.
--- The secret is shown to the operator once at creation time and stored as a
--- SHA-256 hex hash, mirroring the `api_tokens` model.
-
 CREATE TABLE "webhooks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"name" text NOT NULL,
 	"url" text NOT NULL,
 	"secret_hash" text NOT NULL,
-	"events" text[] NOT NULL DEFAULT '{}',
-	"enabled" boolean NOT NULL DEFAULT true,
+	"events" text[] DEFAULT '{}'::text[] NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
 	"last_success_at" timestamp with time zone,
 	"last_failure_at" timestamp with time zone,
 	"last_error_message" text,
-	"consecutive_failures" integer NOT NULL DEFAULT 0,
+	"consecutive_failures" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
