@@ -12,6 +12,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
 
 /**
@@ -60,7 +61,7 @@ export const folders = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    parentId: uuid('parent_id'),
+    parentId: uuid('parent_id').references((): AnyPgColumn => folders.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     color: text('color').notNull().default('#e33d4e'),
     position: integer('position').notNull().default(0),
