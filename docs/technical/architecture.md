@@ -39,13 +39,17 @@ All user-facing routing lives in `app/`:
 | Path                            | Type            | Purpose                                                                 |
 | ------------------------------- | --------------- | ----------------------------------------------------------------------- |
 | `app/page.tsx`                  | Page            | Root — redirects to `/notes`.                                           |
-| `app/(auth)/login`              | Page            | Credentials sign-in form.                                               |
+| `app/(auth)/login`              | Page            | Credentials sign-in form (carries the **Forgot password?** link).       |
 | `app/(auth)/signup`             | Page            | New-account form (404s when `ALLOW_PUBLIC_SIGNUP` is unset / false).    |
+| `app/(auth)/forgot-password`    | Page            | Email form for self-service reset (v1.4). Surfaces a hint when SMTP is unset. |
+| `app/(auth)/reset-password`     | Page            | Token-bearing form to choose a new password.                            |
 | `app/(app)/notes`               | Page            | Main 3-pane shell (sidebar / note list / editor).                       |
 | `app/(app)/settings`            | Page            | Settings — Tags rename/merge, Personal Access Tokens, MCP client config. |
 | `app/(app)/layout.tsx`          | Layout          | Calls `auth()`; redirects unauthenticated users to `/login`.            |
 | `app/api/auth/[...nextauth]`    | Route handler   | Auth.js NextAuth endpoints.                                             |
 | `app/api/auth/signup`           | Route handler   | Custom signup endpoint (gated, rate-limited, seeds `Journal` + Welcome note). |
+| `app/api/auth/forgot-password`  | Route handler   | Begin self-service password reset (v1.4); always 200, no enumeration.    |
+| `app/api/auth/reset-password`   | Route handler   | Consume a reset token + set the new password atomically.                |
 | `app/api/notes`                 | Route handler   | List / create notes.                                                    |
 | `app/api/notes/counts`          | Route handler   | Top-level counts (all / pinned / trash) for sidebar badges.             |
 | `app/api/notes/titles`          | Route handler   | `[[`-autocomplete typeahead (pg_trgm-backed).                           |

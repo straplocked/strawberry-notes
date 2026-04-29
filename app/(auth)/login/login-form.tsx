@@ -81,6 +81,11 @@ function Inner({ showSignupLink }: { showSignupLink: boolean }) {
           {pending ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+      <div className={styles.switch}>
+        <Link className={styles.link} href="/forgot-password">
+          Forgot password?
+        </Link>
+      </div>
       {showSignupLink ? (
         <div className={styles.switch}>
           New here?{' '}

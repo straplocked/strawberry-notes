@@ -20,6 +20,17 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       EMBEDDING_DIMS: ${EMBEDDING_DIMS:-1024}
+      # SMTP (optional). Leave SMTP_HOST empty to disable email sends.
+      # Required for self-service password reset; without it the reset
+      # form falls back to a "ask the operator to run npm run user:reset"
+      # message. Any SMTP relay works (Postmark, Resend, SendGrid, SES,
+      # Mailgun, your own postfix) — they all expose SMTP.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
     ports:
       # Host port 3200 chosen to avoid collisions with other local containers
       # (3000 / 3100 were already in use). Override via APP_PORT in .env.
