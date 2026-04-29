@@ -5,6 +5,31 @@
 
 ---
 
+## Run 6 — 2026-04-28
+
+**Summary:** v1.3 Tier 4 — deploy-hardening. The pre-Unraid pass: a public `/api/health` endpoint, an `app`-service compose `healthcheck`, an Unraid deployment subsection, and a wording fix on the embedding-worker replica-safety claim. v1.3 is now closed; the roadmap header flips from "in progress" to "shipped 2026-04-28". One small code change (the route + its unit test); the rest is doc edits.
+
+**Files modified:**
+
+- `app/api/health/route.ts` — **new file**. Public, unauthenticated, non-rate-limited GET. 1-second-bounded `SELECT 1` via `Promise.race`; 200 + `{ ok: true, db: 'up' }` on success, 503 + `{ ok: false, db: 'down', error }` on failure. `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`. Surfaces no secrets.
+- `app/api/health/route.test.ts` — **new file**. Three Vitest cases mocking `@/lib/db/client`: success path, rejected ping, timed-out ping. No real DB.
+- `docker-compose.yml` — `app` service gains a `healthcheck` calling `/api/health` via `node -e "fetch(...)"` (alpine has no curl). Interval 30 s, timeout 5 s, retries 5, start period 30 s. `docker compose ps` now reflects real readiness.
+- `docs/leadership/roadmap.md` — heading flipped to "v1.3 — Public-launch hardening (shipped 2026-04-28)"; stale `.claude/plans/...` reference replaced with "Tracked in this section". New **Tier 4 — landed** subsection covering the health endpoint, the compose healthcheck, and the Unraid notes, with non-bloat justification.
+- `docs/technical/deployment.md` — new **Health endpoint** subsection under **Public-launch hardening** with the curl example. New **Unraid** section after **Reverse Proxy** covering UID 1001 ownership of host bind mounts under `/mnt/user/appdata/strawberry-notes/{uploads,pgdata}`, the four-field Community-Applications-style env table, the `EMBEDDING_ENDPOINT=http://<lan-ip>:11434/v1` recipe for an Ollama sibling container, and a pointer to use `/api/health` as the Unraid template's WebUI URL for the dashboard's status dot.
+- `docs/technical/database.md` — corrected the **Semantic Search** "safe under N replicas" line. The `SKIP LOCKED` lock releases when the SELECT autocommits, *before* the embed HTTP call, so two replicas can re-embed the same row (vectors converge but the API budget doubles). Recommend single-replica + out-of-band `npm run db:embed` for multi-replica setups. Cross-linked `deployment.md`'s single-replica callout.
+- `DOC_UPDATE.md` — Run counter 5 → 6; last-run date 2026-04-28.
+
+**Files added:** `app/api/health/route.ts`, `app/api/health/route.test.ts`.
+
+**Notes:**
+
+- One real code change in this run (the `/api/health` endpoint and its compose probe) — the rest is doc work tracking the same shipment. Treated as Run 6 because the roadmap header, deployment doc, and database doc all needed propagating updates that would otherwise drift.
+- All modified docs remain under the 250-line threshold; `deployment.md` is now ~245 lines (was ~200), still well under the 400-line split threshold.
+- The embedding-worker replica caveat is now documented in three coherent places: `lib/embeddings/worker.ts` inline, `database.md` Semantic Search, and `deployment.md` Single-replica callout. They say the same thing.
+- The Unraid section deliberately keeps the LinuxServer.io PUID/PGID convention out of scope. The image is non-root by build, and chowning host paths to 1001:1001 once is simpler than a privileged entrypoint that demotes itself. If a future user needs runtime UID flexibility, the Dockerfile would gain `ARG UID/GID` build args — call it out as a v1.3+ candidate, not a v1.3 ship-blocker.
+
+---
+
 ## Run 5 — 2026-04-27
 
 **Summary:** Sync the docs to v1.3 Tier 3 + the sidebar craft pass. Three product-shaped changes drove most of the diff: nested folders (`folders.parent_id` + tree UI), tag rename / merge / delete UI in Settings, and a `pg_trgm` index speeding the `[[`-autocomplete substring scan. A follow-up craft pass turned hover legibility from "stack of small defaults" into a coherent rest → hover → active progression and made the folder dot a clickable colour picker. The leadership/roadmap.md was already updated in the implementation PR (#22) — this run propagates the changes to every other affected doc.

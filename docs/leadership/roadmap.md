@@ -87,9 +87,9 @@ Non-bloat: the extension lives in its own directory with its own build chain; ze
 
 ---
 
-## v1.3 — Public-launch hardening (in progress)
+## v1.3 — Public-launch hardening (shipped 2026-04-28)
 
-The pre-launch checklist that turns a v1.2 private deployment into a v1.3 public-deployment-ready release. Tracked in [.claude/plans/what-features-should-we-nifty-grove.md](../../.claude/plans/what-features-should-we-nifty-grove.md).
+The pre-launch checklist that turned a v1.2 private deployment into a v1.3 public-deployment-ready release. Tracked in this section, tier by tier — the four tiers below all landed.
 
 ### Tier 1 — landed
 
@@ -115,6 +115,16 @@ Non-bloat justification: zero new runtime deps; one new lib module each for `rat
 - **Trigram index on `notes.title`.** Migration `0006` enables `pg_trgm` and adds a GIN index `notes_title_trgm_idx ON notes USING gin (title gin_trgm_ops)`. The existing ILIKE scan in `GET /api/notes/titles` (the `[[` autocomplete) and in the FTS-fallback branch of `listNotes` now uses the trigram index automatically; no query changes needed. Keeps the autocomplete fast into the thousands of notes per user.
 
 Non-bloat justification: zero new runtime deps; two SQL migrations (one extension + index, one column + FK + index); one new file each for `app/api/tags/[id]/route.ts` and `components/app/settings/TagsSection.tsx`. Folder service grew from 60 LOC to ~150 with cycle detection; MCP gained three tools that mirror the new REST surface.
+
+### Tier 4 — landed
+
+The deploy-hardening tier — what was missing before the project was comfortable running on a home-lab box (Unraid, Synology, a Pi 5, a small VPS) for daily use.
+
+- **`/api/health` endpoint.** Public, unauthenticated, never rate-limited. Pings Postgres with a 1 s bounded timeout and returns `{ ok: true, db: 'up' }` 200 / `{ ok: false, db: 'down', error }` 503. Suitable for both Docker probes and reverse-proxy health checks.
+- **`app`-service compose healthcheck.** `docker-compose.yml` now declares a `healthcheck` for the `app` service that calls `/api/health` via `node -e "fetch(...)"` (alpine has no curl). Interval 30 s, start period 30 s, retries 5. `docker compose ps` now reports `(healthy)` once the app is actually serving — previously only Postgres had a health probe.
+- **Unraid deployment notes.** [../technical/deployment.md](../technical/deployment.md) gains an **Unraid** section covering UID 1001 ownership of host bind mounts (`/mnt/user/appdata/strawberry-notes/{uploads,pgdata}`), the Community-Applications-style env table, and the `EMBEDDING_ENDPOINT=http://<lan-ip>:11434/v1` recipe for an Ollama sibling container.
+
+Non-bloat justification: one new tiny route (~30 LOC + a unit test); one compose stanza; doc-only Unraid pass; zero new deps. The route is read-only and returns a single status string — no rate-limiting, no auth surface to harden.
 
 ---
 

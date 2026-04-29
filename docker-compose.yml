@@ -26,6 +26,18 @@ services:
       - "${APP_PORT:-3200}:3000"
     volumes:
       - uploads:/data
+    healthcheck:
+      # Alpine has no curl; use Node's built-in fetch to probe /api/health.
+      # Exit 0 only when the endpoint returns 2xx (DB ping succeeded too).
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   postgres:
     # pgvector/pgvector bundles the `vector` extension on top of the stock

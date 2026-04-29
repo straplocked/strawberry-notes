@@ -143,6 +143,17 @@ If you intend to expose the instance to strangers (or hit Show HN), make sure th
 
 The signup, login, and token-mint endpoints have built-in per-IP / per-user rate limits ([auth.md](auth.md#rate-limiting)). This is defense-in-depth on top of the proxy, not a substitute.
 
+### Health endpoint
+
+`GET /api/health` is a public, unauthenticated, non-rate-limited probe. It runs a 1-second-bounded `SELECT 1` against Postgres and returns `{ ok: true, db: 'up' }` (200) on success or `{ ok: false, db: 'down', error }` (503) on failure. Use it as the readiness probe for any reverse proxy, container orchestrator, or uptime monitor:
+
+```bash
+curl http://localhost:3200/api/health
+# {"ok":true,"db":"up"}
+```
+
+`docker-compose.yml` declares an `app`-service `healthcheck` that calls this endpoint via Node's built-in `fetch` (alpine has no curl). `docker compose ps` reports `(healthy)` once the app is actually serving HTTP — pre-Tier 4 only the `postgres` service had a health probe, so app crashes were invisible to compose.
+
 ---
 
 ## Reverse Proxy
@@ -158,6 +169,57 @@ notes.example.com {
 ```
 
 When you do this, set `AUTH_URL=https://notes.example.com` in `.env` **before** starting the app; otherwise Auth.js redirects will target `http://localhost:3200` and break sign-in.
+
+---
+
+## Unraid
+
+The image runs as **UID 1001 / GID 1001** (the non-root `nextjs` user from `docker/Dockerfile`). Unraid's default container UID is 99/100; that's fine when you stick to **named Docker volumes** (the supplied `docker-compose.yml` does), because Docker manages ownership inside `/var/lib/docker/volumes/...`.
+
+If you switch to **host bind mounts** under `/mnt/user/appdata/strawberry-notes/` (the typical Unraid pattern, so backups land on the array), chown the host paths once before first boot:
+
+```bash
+mkdir -p /mnt/user/appdata/strawberry-notes/{uploads,pgdata}
+chown -R 1001:1001 /mnt/user/appdata/strawberry-notes/uploads
+chown -R 999:999  /mnt/user/appdata/strawberry-notes/pgdata    # postgres image runs as UID 999
+```
+
+Then point the volumes at those paths:
+
+```yaml
+volumes:
+  - /mnt/user/appdata/strawberry-notes/uploads:/data
+  # ...and on the postgres service:
+  - /mnt/user/appdata/strawberry-notes/pgdata:/var/lib/postgresql/data
+```
+
+### Community-Applications-style env table
+
+For an Unraid Docker template, the four fields you need are:
+
+| Env var               | Required | Example                                              |
+| --------------------- | :------: | ---------------------------------------------------- |
+| `AUTH_SECRET`         |    ✅    | `openssl rand -base64 32` output                     |
+| `AUTH_URL`            |    ✅    | `https://notes.your-domain.com` (or `http://<unraid-ip>:3200` if no proxy) |
+| `DATABASE_URL`        |    ✅    | `postgres://strawberry:<password>@postgres:5432/strawberry` |
+| `ALLOW_PUBLIC_SIGNUP` |          | `false` (default) — leave unset unless you want open signup |
+
+Set the **WebUI** field on the Unraid template to `http://[IP]:[PORT:3200]/api/health` so the dashboard's green/red dot reflects real readiness, not just port-open.
+
+### Embedding endpoint when Ollama is a sibling container
+
+If you run Ollama as another Unraid container on the same docker network (e.g. `ollama` exposed on host port `11434`), set:
+
+```bash
+EMBEDDING_ENDPOINT=http://<unraid-lan-ip>:11434/v1
+EMBEDDING_MODEL=mxbai-embed-large
+EMBEDDING_DIMS=1024
+EMBEDDING_API_KEY=                 # leave blank — Ollama doesn't require one
+```
+
+Use the LAN IP rather than `localhost` because the Strawberry Notes container's `localhost` is the container itself, not the host. If both containers join a shared Docker network, `http://ollama:11434/v1` works too — but the LAN-IP form is the safer default for a stock Unraid Docker setup.
+
+After enabling, run the backfill once: `docker compose exec app npm run db:embed`.
 
 ---
 
