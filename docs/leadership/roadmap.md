@@ -128,6 +128,45 @@ Non-bloat justification: one new tiny route (~30 LOC + a unit test); one compose
 
 ---
 
+## v1.4 — Platform-readiness (planned)
+
+The slate that takes Strawberry Notes from "self-host it from a checkout" to "install it from the Unraid Community Apps store and use it daily without operator overhead." Two tiers, ordered so a single-user daily driver is fully featured *before* anything is published for strangers to install.
+
+### Tier 1 — daily-driver complete
+
+The capabilities a single user needs to actually live in the app, in priority order:
+
+- **Outbound webhooks.** Five lightweight events fired from the existing service layer — no new event bus, no pub/sub. Each call site that already mutates state (`createNote`, `updateNote`, etc.) gains a single `fireEvent(...)` line. Events:
+  - `note.created` — agent-or-user-created (excludes the auto-seeded Welcome note).
+  - `note.updated` — debounced 5 s after the last keystroke; payload carries which fields changed (title / content / folder / pinned / tags).
+  - `note.trashed` — soft-delete. Hard-delete (`note.purged`) deferred unless an integration explicitly needs it.
+  - `note.tagged` — fires once per tag-add; carries the tag name. Symmetric `note.untagged` is *not* shipped (asymmetric on purpose: integrations care when something becomes "blog-tagged", rarely when it loses a tag).
+  - `note.linked` — fires when a `[[wiki-link]]` *resolves* to an existing note. Strawberry-specific and uniquely useful: "tell me when anything links to my daily note." Only fires on resolve, not on every keystroke that contains `[[`.
+
+  Delivery: HMAC-SHA-256-signed payload (`X-Strawberry-Signature` header, per-webhook secret shown to the operator once at create time, hashed at rest like the API tokens). Retry: exponential backoff up to 5 attempts. Dead-letter after 5 consecutive 5xx — webhook auto-disables and surfaces a Settings warning. New table `webhooks(id, userId, url, secretHash, events[], lastSuccessAt, lastFailureAt, consecutiveFailures, createdAt)` and a small Settings panel.
+
+- **SMTP / email.** One new env block (`SMTP_HOST/PORT/USER/PASS/FROM`), one runtime dep (`nodemailer`). Unlocks the **self-service password reset** that's been on the candidate list since v1: signed time-bounded reset token → email → set-password page. Optional account-confirmation email on signup (gated by `REQUIRE_EMAIL_CONFIRMATION`, defaults `false`). Skip transactional digests / weekly summaries — they earn their keep with a webhook+integration, not a hard-coded mailer. The single dep covers every "send via 3rd party" path: Resend, Postmark, SendGrid, Mailgun, AWS SES, and your own postfix all expose SMTP.
+
+- **S3-compatible storage backend.** New `lib/storage/driver.ts` interface; the existing local-filesystem code is extracted as `LocalDriver`; `S3Driver` is added. Env-toggled with `STORAGE_BACKEND=local|s3` (default `local` — zero-config behaviour unchanged) plus a standard `S3_*` block (`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`). Covers AWS S3, Cloudflare R2 (free tier — primary recommendation for self-hosters), Backblaze B2, MinIO, Wasabi, and any other S3-compatible object store. Uploads write directly to the driver; the existing `/api/uploads/[id]` endpoint streams via the driver too, with the ownership check unchanged.
+
+- **Storage migration script.** `scripts/storage-migrate.ts` driven by `npm run storage:migrate -- --from=<local|s3> --to=<local|s3> [--dry-run]`. Iterates `attachments`; for each row, streams the file from the source driver and writes to the destination, then updates `attachments.storage_path` in a per-row transaction. Idempotent — a re-run after a partial failure picks up where it left off. Verbose progress output. The same script handles the reverse direction; ops can move from S3 back to local without surgery.
+
+Non-bloat budget for Tier 1: **two** new runtime deps (`nodemailer`, `@aws-sdk/client-s3` — the latter is the smallest S3 SDK that supports R2 / B2 / MinIO without quirks). One new table (`webhooks`). Three new env blocks (SMTP, S3, `STORAGE_BACKEND`). One new Settings panel (Webhooks). One new endpoint group (`/api/webhooks/*`) and one MCP tool family for parity. The existing storage code path becomes one polymorphic call site instead of N hard-coded ones — net file count grows by ~5, not doubles.
+
+### Tier 2 — public-release prep
+
+What turns the project into something a stranger can install in three clicks. Only worth doing *after* Tier 1 — there is no point publishing an image until it's the image you'd want to install.
+
+- **Container registry publishing.** GitHub Actions workflow tags-on-release → `ghcr.io/straplocked/strawberry-notes:vX.Y.Z` + `:vX` + `:latest`. Multi-arch (`linux/amd64` + `linux/arm64`) so a Pi 5 / Apple Silicon homelab box works without rebuild. SBOM + provenance attestations via `actions/attest-build-provenance` for verifiable supply chain.
+- **Unraid Community Apps template.** XML template in a sibling repo (`strawberry-notes-unraid` or `unraid-templates`) listing the four required env vars, the optional S3 / SMTP / embedding blocks, the named volumes, the `WebUI` field pointing at `/api/health`, and an icon. Submit to the Community Applications maintainers. The template references the GHCR image — no build-from-source on the user's box.
+- **Install-from-Unraid documentation.** New top-level subsection in [../technical/deployment.md](../technical/deployment.md) under **Unraid** describing the Community Apps install path step-by-step, with screenshots if cheap.
+- **README install matrix.** Three install paths above the existing quickstart: **Unraid Community Apps** (one-click), **Pre-built image** (`docker run ghcr.io/straplocked/strawberry-notes:latest`), **Source build** (the existing `cp .env.example .env && docker compose up -d` path, retitled "Build from source").
+- **Versioned releases.** Tag `v1.4.0` on the merge of the last Tier 1 PR. Conventional `git describe`-friendly tagging from there forward; the registry workflow keys off tags.
+
+Non-bloat budget for Tier 2: zero new runtime deps. One new GitHub Actions workflow file. One template XML in a sibling repo. Doc-only changes in this repo.
+
+---
+
 See [../../CHANGELOG.md](../CHANGELOG.md) for per-doc-refresh history; `git log` for per-code-change history.
 
 ---
@@ -144,25 +183,26 @@ These are **not** coming. Saying no keeps the product small.
 - **Plugin system / extension API.** The web clipper is a *consumer* of the existing API, not a plugin surface. Adding a plugin model would double the surface for marginal benefit.
 - **Telemetry / analytics / crash reporting.** The code doesn't phone home and won't.
 - **A hosted SaaS.** The license permits anyone to run one; the project itself won't.
+- **Google Drive / Dropbox / OneDrive storage backends.** The S3-compatible driver landing in v1.4 covers the same job (durable, off-host, restorable) without an OAuth consent dance, per-user-scoped credentials, refresh-token rotation, or quota-enforcement edge cases. Cloudflare R2's free tier makes S3-compatible the right zero-cost answer for self-hosters; consumer-cloud-storage is a different product.
+- **Database engines other than Postgres.** SQLite or MySQL would gut the FTS (`tsvector`), the trigram index (`pg_trgm`), and the semantic-search story (`pgvector`). Those three Postgres extensions are what makes the search experience class-leading; abstracting them away is a different product.
 
 If one of these turns out to be the right call later, it becomes a **new product** or a **fork**, not a v2.
 
 ---
 
-## Candidates for v1.3+ (none committed)
+## Candidates for v1.4+ (none committed)
 
-Compatible with the non-bloat line. Ordered by leverage per unit of code.
+Compatible with the non-bloat line. Items committed to v1.4 above (webhooks, SMTP / password reset, S3 storage, registry publishing) have been removed from this list. What remains:
 
 - **Offline write queue.** Dexie is already installed. Queue edits in IndexedDB while offline and flush on reconnect. Main risk: conflict resolution. Mitigation: last-write-wins at document granularity, same as today.
-- **Email-based password reset (self-service).** The v1.3 hardening ships an operator-driven CLI (`npm run user:reset`); a self-service flow would still need SMTP config — kept out of v1.3 to avoid the operator burden.
 - **Graph view.** Backlinks already feed a graph — the hard part is layout. Use D3-force or similar client-side only; no server change needed.
-- **Nested folders** — *shipped in v1.3* (Tier 3 above). Future candidates: drag-to-reparent in the sidebar (the schema and API already support `parentId` updates), and a "Move to…" submenu in the folder hover actions for keyboard-only reparenting.
-- **Time-aware filters** — *shipped in v1.3* (Tier 2 above) as Today / Yesterday / Past 7 / Past 30. Future v1.3+ candidates: a custom-range picker, a per-folder time view that composes time + folder, and a "today's note" template that pre-fills the editor when the user hits **+** while Today is selected.
-- **Attachments beyond images.** PDFs, text files, etc. Requires magic-byte sniffing in the upload endpoint (see [../technical/uploads.md](../technical/uploads.md)).
-- **Tag autocomplete / rename UI** — *rename + merge + delete shipped in v1.3* (Tier 3 above). Future candidate: in-editor autocomplete on the inline tag editor (currently the editor only suggests tags the user already types into).
-- **Trigram index on `notes.title`** — *shipped in v1.3* (Tier 3 above). Title autocomplete now indexes ILIKE substring queries.
+- **Drag-to-reparent folders.** The schema and API already support `parentId` updates from v1.3 Tier 3. The remaining work is the sidebar interaction model and a "Move to…" submenu in the folder hover actions for keyboard-only reparenting.
+- **Custom time-range picker.** v1.3 Tier 2 shipped Today / Yesterday / Past 7 / Past 30 as fixed buckets. A custom-range picker, a per-folder time view that composes time + folder, and a "today's note" template that pre-fills the editor on **+** while Today is selected are natural extensions.
+- **Attachments beyond images.** PDFs, text files, etc. Requires magic-byte sniffing in the upload endpoint (see [../technical/uploads.md](../technical/uploads.md)). Pairs naturally with the v1.4 S3 driver — large attachments off-host immediately.
+- **In-editor tag autocomplete.** v1.3 Tier 3 shipped tag rename + merge + delete in Settings. The remaining gap is autocomplete in the inline tag editor (currently the editor only suggests tags the user already types into).
 - **`all.zip` re-import.** Closes the symmetric-backup loop; manifest schema is already stable.
 - **Per-user embedding model choice.** Let users pick between short-context and long-context embedding models when the operator has more than one configured.
+- **Inbound triggers / scheduled events.** v1.4 ships *outbound* webhooks fired from existing service-layer events. A symmetric *inbound* surface (e.g. `digest.daily` fired by an internal scheduler at the user's chosen local time, or `note.reminder` fired by a `#remind/2026-05-01` tag) would extend the integration story but adds a scheduler and a tag-pattern parser — defer until a concrete use case demands it.
 
 The selection rule is: **does this make the product meaningfully better for the self-hoster or for the agent interface without adding a new external dependency or doubling the codebase?** If not, it stays in this list.
 
