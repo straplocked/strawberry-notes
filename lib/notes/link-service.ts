@@ -12,17 +12,31 @@ import type { BacklinkDTO, PMDoc } from '../types';
  * the result in `note_links`. Unresolved titles are kept with `target_id=null`
  * so they auto-resolve later when a matching note is created via
  * {@link resolvePendingLinksForTitle}.
+ *
+ * Returns the set of `(sourceId, targetId)` pairs that are *newly resolved*
+ * by this sync — i.e. links that didn't exist (or weren't resolved) before.
+ * Used by the service layer to fire `note.linked` webhooks. A re-save with
+ * no actual link changes returns an empty array.
  */
 export async function syncOutboundLinks(
   userId: string,
   sourceId: string,
   doc: PMDoc,
-): Promise<void> {
+): Promise<Array<{ sourceId: string; targetId: string }>> {
   const titles = extractWikiLinks(doc);
 
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
+    // Capture the previous resolved set so we can diff after the rewrite.
+    const previous = await tx
+      .select({ targetId: noteLinks.targetId })
+      .from(noteLinks)
+      .where(eq(noteLinks.sourceId, sourceId));
+    const previouslyResolved = new Set(
+      previous.map((p) => p.targetId).filter((x): x is string => typeof x === 'string'),
+    );
+
     await tx.delete(noteLinks).where(eq(noteLinks.sourceId, sourceId));
-    if (titles.length === 0) return;
+    if (titles.length === 0) return [];
 
     const matches = await tx
       .select({ id: notes.id, title: notes.title })
@@ -46,6 +60,15 @@ export async function syncOutboundLinks(
       targetTitle: title,
     }));
     await tx.insert(noteLinks).values(rows).onConflictDoNothing();
+
+    // Newly-resolved = resolved-now AND NOT resolved-before.
+    const newlyResolved: Array<{ sourceId: string; targetId: string }> = [];
+    for (const r of rows) {
+      if (r.targetId && !previouslyResolved.has(r.targetId)) {
+        newlyResolved.push({ sourceId, targetId: r.targetId });
+      }
+    }
+    return newlyResolved;
   });
 }
 
@@ -53,19 +76,22 @@ export async function syncOutboundLinks(
  * When a note is created or renamed, any existing unresolved `note_links` rows
  * whose `target_title` matches (case-insensitive) should point at it. Scoped
  * to the owning user's notes — we dereference source notes to check ownership.
+ *
+ * Returns the set of source note ids whose link to `noteId` just resolved —
+ * the service layer fires `note.linked(source, target)` for each.
  */
 export async function resolvePendingLinksForTitle(
   userId: string,
   noteId: string,
   title: string,
-): Promise<void> {
+): Promise<string[]> {
   const t = title.trim().toLowerCase();
-  if (!t) return;
+  if (!t) return [];
 
   // Only update rows whose source note belongs to the same user. We can't
   // express this in a single UPDATE with Drizzle's type-narrow WHERE because
   // note_links has no userId column, so we use a correlated sub-select.
-  await db
+  const updated = await db
     .update(noteLinks)
     .set({ targetId: noteId })
     .where(
@@ -78,7 +104,9 @@ export async function resolvePendingLinksForTitle(
             and ${notes.userId} = ${userId}
         )`,
       ),
-    );
+    )
+    .returning({ sourceId: noteLinks.sourceId });
+  return updated.map((r) => r.sourceId);
 }
 
 /**

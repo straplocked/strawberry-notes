@@ -16,6 +16,14 @@ import {
 } from './link-service';
 import { deleteAttachmentsForNote } from './gc';
 import { isTimeRange, timeRangeBounds, type TimeRange } from './time-range';
+import {
+  fireNoteCreated,
+  fireNoteLinked,
+  fireNoteTagged,
+  fireNoteTrashed,
+  fireNoteUpdated,
+  noteRef,
+} from '../webhooks/fire';
 import type { NoteDTO, NoteListItemDTO, PMDoc } from '../types';
 
 export interface ListNotesParams {
@@ -183,15 +191,16 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
     await setNoteTags(n.id, tagIds);
   }
 
-  await syncOutboundLinks(userId, n.id, doc);
+  const newlyResolvedOutbound = await syncOutboundLinks(userId, n.id, doc);
+  let newlyResolvedInbound: string[] = [];
   if (n.title.trim()) {
-    await resolvePendingLinksForTitle(userId, n.id, n.title);
+    newlyResolvedInbound = await resolvePendingLinksForTitle(userId, n.id, n.title);
   }
 
   // Fire-and-forget: do not block the save path on embedding work.
   kickEmbeddingWorker();
 
-  return {
+  const dto: NoteDTO = {
     id: n.id,
     folderId: n.folderId,
     title: n.title,
@@ -203,6 +212,30 @@ export async function createNote(userId: string, input: CreateNoteInput): Promis
     updatedAt: n.updatedAt.toISOString(),
     createdAt: n.createdAt.toISOString(),
   };
+
+  // Fan-out webhook events (best-effort, non-blocking).
+  fireNoteCreated(userId, noteRef(dto));
+  for (const link of newlyResolvedOutbound) {
+    void fireLinkedFor(userId, link.sourceId, link.targetId);
+  }
+  for (const sourceId of newlyResolvedInbound) {
+    void fireLinkedFor(userId, sourceId, n.id);
+  }
+
+  return dto;
+}
+
+async function fireLinkedFor(
+  userId: string,
+  sourceId: string,
+  targetId: string,
+): Promise<void> {
+  const [src, tgt] = await Promise.all([
+    getNote(userId, sourceId),
+    getNote(userId, targetId),
+  ]);
+  if (!src || !tgt) return;
+  fireNoteLinked(userId, noteRef(src), noteRef(tgt));
 }
 
 export interface UpdateNoteInput {
@@ -255,15 +288,17 @@ export async function updateNote(
     await setNoteTags(id, tagIds);
   }
 
+  let newlyResolvedOutbound: Array<{ sourceId: string; targetId: string }> = [];
+  let newlyResolvedInbound: string[] = [];
   if (patch.content !== undefined) {
-    await syncOutboundLinks(userId, id, patch.content);
+    newlyResolvedOutbound = await syncOutboundLinks(userId, id, patch.content);
   }
   if (patch.title !== undefined) {
     // Links that previously matched this note by its old title are invalidated;
     // rows matching the new title are picked up.
     await unresolveLinksTo(userId, id);
     if (updated[0].title.trim()) {
-      await resolvePendingLinksForTitle(userId, id, updated[0].title);
+      newlyResolvedInbound = await resolvePendingLinksForTitle(userId, id, updated[0].title);
     }
   }
 
@@ -271,7 +306,34 @@ export async function updateNote(
     kickEmbeddingWorker();
   }
 
-  return getNote(userId, id);
+  const dto = await getNote(userId, id);
+  if (!dto) return null;
+
+  // Fan-out webhook events. `note.trashed` displaces `note.updated` when the
+  // patch's primary intent is the soft-delete flag — consumers care about the
+  // transition, not "the note was updated and also happens to be trashed now."
+  if (patch.trashed === true) {
+    fireNoteTrashed(userId, noteRef(dto));
+  } else {
+    const changedFields: NonNullable<Parameters<typeof fireNoteUpdated>[2]> = [];
+    if (patch.title !== undefined) changedFields.push('title');
+    if (patch.content !== undefined) changedFields.push('content');
+    if (patch.folderId !== undefined) changedFields.push('folderId');
+    if (patch.pinned !== undefined) changedFields.push('pinned');
+    if (patch.tagNames !== undefined) changedFields.push('tags');
+    if (changedFields.length > 0) {
+      fireNoteUpdated(userId, noteRef(dto), changedFields);
+    }
+  }
+
+  for (const link of newlyResolvedOutbound) {
+    void fireLinkedFor(userId, link.sourceId, link.targetId);
+  }
+  for (const sourceId of newlyResolvedInbound) {
+    void fireLinkedFor(userId, sourceId, id);
+  }
+
+  return dto;
 }
 
 export async function deleteNote(
@@ -291,12 +353,19 @@ export async function deleteNote(
       .returning({ id: notes.id });
     return rows.length > 0;
   }
+
+  // Soft-delete: capture state BEFORE flipping trashedAt so we can fire the
+  // webhook event with the note's pre-trash ref. After update, the row is
+  // hidden from default list views but `getNote` still returns it.
+  const dto = await getNote(userId, id);
   const rows = await db
     .update(notes)
     .set({ trashedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(notes.id, id), eq(notes.userId, userId)))
     .returning({ id: notes.id });
-  return rows.length > 0;
+  if (rows.length === 0) return false;
+  if (dto) fireNoteTrashed(userId, noteRef(dto));
+  return true;
 }
 
 /** Add a tag (by name) to a note. Idempotent. Returns the resolved tag id. */
@@ -312,7 +381,20 @@ export async function addTagToNote(
   if (!owned) return null;
   const [tagId] = await upsertTagsByName(userId, [name]);
   if (!tagId) return null;
-  await db.insert(noteTags).values({ noteId, tagId }).onConflictDoNothing();
+  // `returning` lets us tell whether the row was newly inserted (i.e. the
+  // tag was actually added) or already present (idempotent no-op). Only fire
+  // the `note.tagged` webhook for true additions.
+  const inserted = await db
+    .insert(noteTags)
+    .values({ noteId, tagId })
+    .onConflictDoNothing()
+    .returning({ noteId: noteTags.noteId });
+  if (inserted.length > 0) {
+    const dto = await getNote(userId, noteId);
+    if (dto) {
+      fireNoteTagged(userId, noteRef(dto), { id: tagId, name: name.trim().toLowerCase() });
+    }
+  }
   return tagId;
 }
 

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
 import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
+import { WebhooksSection } from '@/components/app/settings/WebhooksSection';
 
 export const metadata: Metadata = { title: 'Settings — Strawberry Notes' };
 
@@ -44,6 +45,7 @@ export default function SettingsPage() {
       </header>
       <TagsSection />
       <TokensSection />
+      <WebhooksSection />
       <McpClientsSection />
     </main>
   );

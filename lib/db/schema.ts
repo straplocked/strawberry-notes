@@ -202,6 +202,38 @@ export const noteLinks = pgTable(
   }),
 );
 
+// Outbound webhooks. One row = one delivery target owned by one user.
+// The `events` text[] holds the event names this webhook subscribes to
+// (e.g. ['note.created', 'note.tagged']). The secret is shown once at
+// creation time and stored as a SHA-256 hex hash, mirroring the
+// api_tokens model. `consecutiveFailures` >= 5 trips `enabled = false`
+// automatically — see lib/webhooks/delivery.ts.
+export const webhooks = pgTable(
+  'webhooks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    secretHash: text('secret_hash').notNull(),
+    events: text('events')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    enabled: boolean('enabled').notNull().default(true),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    lastFailureAt: timestamp('last_failure_at', { withTimezone: true }),
+    lastErrorMessage: text('last_error_message'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('webhooks_user_idx').on(t.userId),
+  }),
+);
+
 export type User = InferSelectModel<typeof users>;
 export type Folder = InferSelectModel<typeof folders>;
 export type Note = InferSelectModel<typeof notes>;
@@ -209,3 +241,4 @@ export type Tag = InferSelectModel<typeof tags>;
 export type Attachment = InferSelectModel<typeof attachments>;
 export type ApiToken = InferSelectModel<typeof apiTokens>;
 export type NoteLink = InferSelectModel<typeof noteLinks>;
+export type Webhook = InferSelectModel<typeof webhooks>;

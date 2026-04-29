@@ -369,6 +369,54 @@ Revokes a token (sets `revokedAt`). Subsequent calls with that token return `401
 
 ---
 
+## Webhooks
+
+Outbound webhooks for the five lightweight events fired by the service layer (see [webhooks.md](webhooks.md) for the full event catalogue and consumer-side verification recipe). Gated by the session cookie — agents do not configure webhooks via MCP; the user does, from Settings.
+
+### `GET /api/webhooks`
+
+List the signed-in user's webhooks. Secrets are never returned; only the row metadata.
+
+Response: `WebhookDTO[]` — `{ id, name, url, events, enabled, lastSuccessAt, lastFailureAt, lastErrorMessage, consecutiveFailures, createdAt }`.
+
+### `POST /api/webhooks`
+
+Mint a new webhook. Rate-limited at **20 creates per user per hour**.
+
+Request:
+```json
+{
+  "name": "n8n",
+  "url": "https://n8n.example.com/webhook/strawberry",
+  "events": ["note.created", "note.tagged"]
+}
+```
+
+Validation:
+- `name`: 1–80 chars.
+- `url`: ≤ 2000 chars; must parse as `http:` or `https:`.
+- `events`: at least one of `note.created`, `note.updated`, `note.trashed`, `note.tagged`, `note.linked`.
+
+Response (200): `IssuedWebhook` — `WebhookDTO` plus `secret: "whsec_<64-hex>"`. The raw secret is returned **once**; only its SHA-256 hash is persisted server-side. Receivers verify each delivery by computing `HMAC-SHA-256(secret, body)` and comparing against the `X-Strawberry-Signature` header (strip the `sha256=` prefix).
+
+### `PATCH /api/webhooks/:id`
+
+Update one or more of `name`, `url`, `events`, `enabled`, `resetFailures`. Sending `{ enabled: true, resetFailures: true }` is the standard "re-enable a dead-lettered webhook" flow.
+
+Response: updated `WebhookDTO` or `404`.
+
+### `DELETE /api/webhooks/:id`
+
+Delete the webhook. Pending in-flight deliveries are dropped silently. Returns `{ ok: true }` or `404`.
+
+### `POST /api/webhooks/:id/test`
+
+Send a synthetic `note.created` payload to the webhook's URL right now, ignoring the row's `events` subscription. One attempt — no retries. Useful for "does my consumer see us?" diagnostics from the Settings UI. Updates `lastSuccessAt` / `lastFailureAt` as if it were a real fire.
+
+Response: `{ webhookId, ok, status, attempt, errorMessage? }`.
+
+---
+
 ## MCP
 
 ### `POST /api/mcp`
@@ -393,3 +441,9 @@ Notable shapes updated in v1.3:
 
 - `FolderDTO` — gains `parentId: string | null` for nested-folder support. Top-level folders carry `parentId: null`. The client builds the tree from this flat list (`buildFolderTree` in `components/app/Sidebar.tsx`).
 - `PATCH /api/tags/:id` response — `{ id: string, merged: boolean }`. The surviving tag's id (same as input on a pure rename, the existing tag's id on merge) plus a flag telling the client whether memberships got rewritten.
+
+Notable shapes added in v1.4:
+
+- `WebhookDTO` — `{ id, name, url, events, enabled, lastSuccessAt, lastFailureAt, lastErrorMessage, consecutiveFailures, createdAt }`. Listed by `GET /api/webhooks`.
+- `IssuedWebhook` — `WebhookDTO & { secret: string }`. Returned **once** by `POST /api/webhooks`.
+- Per-event payloads: `NoteCreatedPayload`, `NoteUpdatedPayload`, `NoteTrashedPayload`, `NoteTaggedPayload`, `NoteLinkedPayload` — see `lib/webhooks/types.ts` and [webhooks.md](webhooks.md).
