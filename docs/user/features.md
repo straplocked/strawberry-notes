@@ -205,6 +205,22 @@ A blockquote with the source URL is automatically prepended. See [../technical/e
 
 ---
 
+## Webhooks
+
+**Settings → Webhooks** lets you POST a small JSON payload to any HTTPS endpoint when something happens in your notes. Five events:
+
+- `note.created` — a new note was created (excludes the auto-seeded Welcome note).
+- `note.updated` — a note's title / content / folder / pin / tags changed (debounced 5 seconds, so a typing burst sends one webhook, not fifteen).
+- `note.trashed` — a note was soft-deleted (moved to Trash).
+- `note.tagged` — a tag was added to a note.
+- `note.linked` — a `[[wiki-link]]` resolved to an existing note for the first time. Useful for "tell me when anything links to my daily note."
+
+Each delivery carries an `X-Strawberry-Signature: sha256=<hex>` header — your endpoint should verify it with `HMAC-SHA-256(secret, body)`. The signing secret is shown to you **once** when you create the webhook; treat it like a password.
+
+If your endpoint returns errors five times in a row, the webhook auto-disables. Re-enable it from the same Settings panel after fixing things on your end. The **Test** button on each row sends a synthetic `note.created` payload right now — handy for confirming your consumer (n8n / Zapier / Slack / a custom script) is wired up correctly. See [../technical/webhooks.md](../technical/webhooks.md) for the full delivery contract and signature verification recipe.
+
+---
+
 ## Connecting an AI assistant (MCP)
 
 Strawberry Notes speaks the [Model Context Protocol](https://modelcontextprotocol.io), so Claude Desktop, Claude Code, Cursor, and other MCP-aware clients can read and write your notes on your behalf — and, crucially, do meaning-based search and graph traversal over the same notes.

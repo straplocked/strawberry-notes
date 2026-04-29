@@ -15,6 +15,7 @@ Audience: engineers extending, operating, or reviewing Strawberry Notes.
 | [deployment.md](deployment.md)             | Docker build, env vars (incl. `EMBEDDING_*`), reverse proxy, backup.  |
 | [mcp.md](mcp.md)                           | MCP server at `/api/mcp`, personal access tokens, tool reference.     |
 | [extension.md](extension.md)               | MV3 browser web clipper (`extension/`), install, CORS, auth.          |
+| [webhooks.md](webhooks.md)                 | Outbound webhooks: events, signing, retries, dead-letter (v1.4).      |
 
 ---
 

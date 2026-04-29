@@ -118,6 +118,25 @@ created. See [editor.md](editor.md) for the resolution flow.
 | `storagePath` | `text`       | path relative to `UPLOAD_DIR`                |
 | `createdAt`   | `timestamptz`|                                              |
 
+### `webhooks`
+
+| Column                | Type            | Notes                                                                                  |
+| --------------------- | --------------- | -------------------------------------------------------------------------------------- |
+| `id`                  | `uuid` PK       |                                                                                        |
+| `userId`              | `uuid` FK       | → `users.id` ON DELETE CASCADE                                                          |
+| `name`                | `text`          | human label, ≤ 80 chars                                                                |
+| `url`                 | `text`          | `http(s)` endpoint                                                                     |
+| `secretHash`          | `text`          | SHA-256 hex of the `whsec_…` secret. Raw secret never persisted.                       |
+| `events`              | `text[]`        | subset of `note.created` / `note.updated` / `note.trashed` / `note.tagged` / `note.linked` |
+| `enabled`             | `boolean`       | flipped to false after 5 consecutive delivery failures                                 |
+| `lastSuccessAt`       | `timestamptz?`  |                                                                                        |
+| `lastFailureAt`       | `timestamptz?`  |                                                                                        |
+| `lastErrorMessage`    | `text?`         | truncated to 500 chars                                                                 |
+| `consecutiveFailures` | `integer`       | reset to 0 on success                                                                  |
+| `createdAt`           | `timestamptz`   |                                                                                        |
+
+Index: `webhooks_user_idx` on `(userId)`. See [webhooks.md](webhooks.md) for the delivery contract and event payloads.
+
 ---
 
 ## Relations (Drizzle)
@@ -127,7 +146,8 @@ users ──┬── folders          (1:N, cascade)
         ├── notes            (1:N, cascade)
         ├── tags             (1:N, cascade)
         ├── attachments      (1:N, cascade)
-        └── api_tokens       (1:N, cascade)
+        ├── api_tokens       (1:N, cascade)
+        └── webhooks         (1:N, cascade)
 
 folders ── folders           (self-FK, cascade — nested folder tree)
 folders ── notes             (1:N, set null on folder delete)
@@ -151,6 +171,7 @@ Generated into `drizzle/`:
 - `0005_embeddings.sql` — pgvector extension, `content_embedding` column, IVFFlat index.
 - `0006_title_trgm.sql` — `pg_trgm` extension + GIN index on `notes.title`.
 - `0007_nested_folders.sql` — `folders.parent_id` self-FK + `folders_parent_idx`.
+- `0008_webhooks.sql` — `webhooks` table for v1.4 outbound event delivery.
 
 Workflow:
 

@@ -64,7 +64,11 @@ All user-facing routing lives in `app/`:
 | `app/api/attachments/gc`        | Route handler   | Sweep orphaned attachments (5-minute grace window).                     |
 | `app/api/tokens`                | Route handler   | List / create Personal Access Tokens (session-only; mints `snb_…`).     |
 | `app/api/tokens/[id]`           | Route handler   | Revoke a token.                                                         |
+| `app/api/webhooks`              | Route handler   | List / create outbound webhooks (session-only; mints `whsec_…`).        |
+| `app/api/webhooks/[id]`         | Route handler   | Patch (events / url / enabled / resetFailures) or delete a webhook.     |
+| `app/api/webhooks/[id]/test`    | Route handler   | Send a synthetic `note.created` payload for diagnostics.                |
 | `app/api/mcp`                   | Route handler   | Model Context Protocol server (bearer-only, stateless JSON-RPC).        |
+| `app/api/health`                | Route handler   | Public readiness probe; pings Postgres with a 1 s timeout.              |
 | `app/manifest.ts`               | Metadata route  | Emits PWA `manifest.webmanifest`.                                       |
 
 Route groups:
