@@ -203,6 +203,29 @@ export const noteLinks = pgTable(
   }),
 );
 
+// Self-service password-reset tokens. One row per outstanding request;
+// tokens are hashed (SHA-256) and single-use. The raw token is emailed
+// to the user and never stored. `expires_at` drives the validity check;
+// `used_at` flips on consumption. Stale rows are reaped opportunistically
+// by future issues (see lib/auth/password-reset.ts).
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('password_reset_tokens_user_idx').on(t.userId),
+    hashUq: unique('password_reset_tokens_hash_uq').on(t.tokenHash),
+  }),
+);
+
 // Outbound webhooks. One row = one delivery target owned by one user.
 // The `events` text[] holds the event names this webhook subscribes to
 // (e.g. ['note.created', 'note.tagged']). The secret is shown once at
@@ -243,3 +266,4 @@ export type Attachment = InferSelectModel<typeof attachments>;
 export type ApiToken = InferSelectModel<typeof apiTokens>;
 export type NoteLink = InferSelectModel<typeof noteLinks>;
 export type Webhook = InferSelectModel<typeof webhooks>;
+export type PasswordResetToken = InferSelectModel<typeof passwordResetTokens>;

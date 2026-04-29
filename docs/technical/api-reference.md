@@ -37,6 +37,31 @@ The client then calls `signIn('credentials', ...)` on success.
 
 Auth.js catch-all. Delegates to `handlers` exported from `lib/auth.ts`. Supports credentials sign-in, session introspection, and sign-out. See [auth.md](auth.md).
 
+### `POST /api/auth/forgot-password`
+
+Begin a self-service password reset (v1.4). Always returns `200` regardless of whether the email is registered — the response shape never reveals which addresses exist.
+
+Request: `{ "email": "user@example.com" }`.
+
+- `{ ok: true, configured: true }` — SMTP is configured and the request was accepted; if the email matches a user, a reset link was emailed.
+- `{ ok: true, configured: false }` — SMTP isn't set up; the `/forgot-password` page renders an operator-pathway hint instead of pretending an email is on the way.
+- Rate limited: 3/IP/hr. Denials are 429.
+
+Token TTL: 1 hour. Tokens are `srt_<64-hex>`, stored as SHA-256 hash, single-use. See [auth.md](auth.md#self-service-password-reset-v14).
+
+### `POST /api/auth/reset-password`
+
+Consume a reset token + set a new password.
+
+Request: `{ "token": "srt_…", "password": "≥8 chars" }`.
+
+- `200 { ok: true }` on success.
+- `400 { error: "password_too_short" | "invalid_body" }`.
+- `410 { error: "invalid" | "expired" | "used" }` — token rejected.
+- Rate limited: 10/IP/hr.
+
+Atomic: the row's `usedAt` flips inside the same transaction that updates the user's password hash. Concurrent reuse loses the race and gets `used`.
+
 ---
 
 ## Notes

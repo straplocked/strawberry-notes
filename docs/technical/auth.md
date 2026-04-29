@@ -94,7 +94,10 @@ Auth-adjacent endpoints are protected by a per-process in-memory token-bucket li
 | --------------------------------------- | -------------------------------------------- |
 | `POST /api/auth/signup`                 | 5 per IP per hour, capacity 5                |
 | `POST /api/auth/callback/credentials`   | 10 per IP per minute, capacity 10            |
+| `POST /api/auth/forgot-password`        | 3 per IP per hour, capacity 3                |
+| `POST /api/auth/reset-password`         | 10 per IP per hour, capacity 10              |
 | `POST /api/tokens` (issue access token) | 20 per signed-in user per hour, capacity 20  |
+| `POST /api/webhooks` (mint webhook)     | 20 per signed-in user per hour, capacity 20  |
 
 Limits are per-process, not global. Operators running multiple replicas should add an upstream limiter at the reverse proxy — this layer is defense-in-depth, not a substitute. The limiter keys on `X-Forwarded-For` first hop, then `X-Real-IP`, then a constant fallback; pass these headers through your proxy.
 
@@ -108,7 +111,21 @@ Denied calls return HTTP 429 with `{ error: "rate_limit_exceeded", retryAfterSec
 - No complexity requirements.
 - Hashed with `bcryptjs` at cost 10.
 
-There is **no email-based self-service password reset** — the v1 recovery path is operator-driven:
+### Self-service password reset (v1.4)
+
+Configure `SMTP_HOST` + `SMTP_FROM` (see [deployment.md](deployment.md#smtp--email-optional)) and the **Forgot password?** link on the sign-in page becomes functional:
+
+1. User opens `/forgot-password`, enters their email, submits.
+2. `POST /api/auth/forgot-password` is rate-limited (3/IP/hr). The route always returns 200 — the response shape never reveals whether the address is registered.
+3. If the email matches a user, the server mints an `srt_<64-hex>` token, stores its SHA-256 hash with a 1-hour expiry in `password_reset_tokens`, and emails the user a link `${AUTH_URL}/reset-password?token=…`.
+4. User clicks the link → `/reset-password` page → POSTs `{ token, password }` to `/api/auth/reset-password`.
+5. The token row's `usedAt` is flipped inside the same transaction that updates `users.passwordHash`. Single-use; concurrent reuse loses the race.
+
+Token-row lifecycle: stale rows for the user (expired or already used) are reaped opportunistically on every fresh issue, so there is no cron job. Existing JWT sessions remain valid through a reset — the user signs in afresh on their next visit.
+
+When `SMTP_HOST` is unset the **Forgot password?** page still loads but explicitly tells the user the operator needs to run `npm run user:reset` (or to configure SMTP). The `POST /api/auth/forgot-password` response carries `{ ok: true, configured: false }` for that case so the page can render the operator-pathway hint without leaking which addresses exist.
+
+### Operator-driven reset (always available)
 
 ```bash
 docker compose exec app npm run user:reset -- alice@example.com
@@ -116,9 +133,9 @@ docker compose exec app npm run user:reset -- alice@example.com
 # To set a specific password: npm run user:reset -- alice@example.com newpassword1
 ```
 
-The CLI updates `users.passwordHash` for the matching email; existing JWT sessions remain valid until they expire. The same script is the recommended path for rotating an admin password.
+The CLI updates `users.passwordHash` for the matching email; existing JWT sessions remain valid until they expire. Useful for instances that don't want SMTP, for emergencies, or for rotating an admin password.
 
-The provisioning helpers live in `lib/auth/user-admin.ts` and are unit-tested; the wrappers in `scripts/create-user.ts` and `scripts/reset-password.ts` are tiny argv → call shells.
+The provisioning helpers live in `lib/auth/user-admin.ts` and are unit-tested; the wrappers in `scripts/create-user.ts` and `scripts/reset-password.ts` are tiny argv → call shells. Self-service token issue/consume lives in `lib/auth/password-reset.ts` and is also unit-tested.
 
 ---
 

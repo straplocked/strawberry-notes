@@ -118,6 +118,19 @@ created. See [editor.md](editor.md) for the resolution flow.
 | `storagePath` | `text`       | path relative to `UPLOAD_DIR`                |
 | `createdAt`   | `timestamptz`|                                              |
 
+### `password_reset_tokens`
+
+| Column       | Type            | Notes                                                                     |
+| ------------ | --------------- | ------------------------------------------------------------------------- |
+| `id`         | `uuid` PK       |                                                                           |
+| `userId`     | `uuid` FK       | → `users.id` ON DELETE CASCADE                                            |
+| `tokenHash`  | `text` UNIQUE   | SHA-256 hex of the `srt_…` reset token (raw value emailed once, never stored) |
+| `expiresAt`  | `timestamptz`   | 1 hour after issue (default)                                              |
+| `usedAt`     | `timestamptz?`  | flipped on successful consume; single-use                                 |
+| `createdAt`  | `timestamptz`   |                                                                           |
+
+Index: `password_reset_tokens_user_idx` on `(userId)`. Stale rows (expired or used) are reaped opportunistically inside `issuePasswordResetTokenForEmail` — there is no cron sweep. See [auth.md](auth.md#self-service-password-reset-v14) for the v1.4 reset flow.
+
 ### `webhooks`
 
 | Column                | Type            | Notes                                                                                  |
@@ -142,12 +155,13 @@ Index: `webhooks_user_idx` on `(userId)`. See [webhooks.md](webhooks.md) for the
 ## Relations (Drizzle)
 
 ```
-users ──┬── folders          (1:N, cascade)
-        ├── notes            (1:N, cascade)
-        ├── tags             (1:N, cascade)
-        ├── attachments      (1:N, cascade)
-        ├── api_tokens       (1:N, cascade)
-        └── webhooks         (1:N, cascade)
+users ──┬── folders                (1:N, cascade)
+        ├── notes                  (1:N, cascade)
+        ├── tags                   (1:N, cascade)
+        ├── attachments            (1:N, cascade)
+        ├── api_tokens             (1:N, cascade)
+        ├── webhooks               (1:N, cascade)
+        └── password_reset_tokens  (1:N, cascade)
 
 folders ── folders           (self-FK, cascade — nested folder tree)
 folders ── notes             (1:N, set null on folder delete)
@@ -172,6 +186,7 @@ Generated into `drizzle/`:
 - `0006_title_trgm.sql` — `pg_trgm` extension + GIN index on `notes.title`.
 - `0007_nested_folders.sql` — `folders.parent_id` self-FK + `folders_parent_idx`.
 - `0008_webhooks.sql` — `webhooks` table for v1.4 outbound event delivery.
+- `0009_password_reset.sql` — `password_reset_tokens` table for v1.4 self-service reset.
 
 Workflow:
 

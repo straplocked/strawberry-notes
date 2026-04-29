@@ -89,6 +89,12 @@ Optional (with defaults):
 | `EMBEDDING_MODEL`    | *(unset)*                  | Model id, e.g. `text-embedding-3-small`.     |
 | `EMBEDDING_API_KEY`  | *(unset)*                  | Bearer token for the provider. Optional for local providers. |
 | `EMBEDDING_DIMS`     | `1024`                     | Vector dim the `notes.content_embedding` column was provisioned for. Must match the provider's output dim. |
+| `SMTP_HOST`          | *(unset)*                  | SMTP server. Empty disables email; self-service password reset falls back to "ask the operator". |
+| `SMTP_PORT`          | `587`                      | STARTTLS by default; use 465 with `SMTP_SECURE=true` for implicit TLS. |
+| `SMTP_USER`          | *(unset)*                  | Optional SMTP auth username.                  |
+| `SMTP_PASS`          | *(unset)*                  | Optional SMTP auth password.                  |
+| `SMTP_FROM`          | *(unset)*                  | `From:` address used on outbound mail. Required when `SMTP_HOST` is set. |
+| `SMTP_SECURE`        | `false`                    | `true` forces implicit TLS at connect time.   |
 
 `.env.example` at the repo root documents the full set — copy it to `.env` before first boot.
 
@@ -104,6 +110,21 @@ To enable:
 4. Run `npm run db:embed` (locally, against the deployed DB) to backfill existing notes. Fresh writes embed automatically via a lazy in-process worker.
 
 Changing `EMBEDDING_DIMS` or swapping to a model with a different dim is a **destructive re-embed**: drop the index + column and re-run the migration. The old vectors are meaningless under a new dim.
+
+### SMTP / email (optional)
+
+Leave `SMTP_HOST` empty to run without email. The app boots, the **Forgot password?** link on `/login` still loads, and the page surfaces a "ask the operator to run `npm run user:reset`" message instead of pretending an email is on the way.
+
+To enable self-service password reset:
+
+1. Pick any SMTP relay — Postmark, Resend, SendGrid, Mailgun, AWS SES, your own postfix. They all expose SMTP; there is no per-provider adapter.
+2. Set `SMTP_HOST`, `SMTP_FROM`, and (if your relay requires auth) `SMTP_USER` + `SMTP_PASS`. Default port is 587 with STARTTLS; for implicit-TLS submission set `SMTP_PORT=465` and `SMTP_SECURE=true`.
+3. Confirm `AUTH_URL` matches the canonical public URL — it's used to build the reset link the user clicks.
+4. `docker compose up -d`. No migration to run; the schema for `password_reset_tokens` ships with the image.
+
+Smoke test: open `/forgot-password`, submit your address, confirm the email arrives with a `${AUTH_URL}/reset-password?token=…` link, click through, set a new password, sign in.
+
+The reset path is rate-limited at 3 requests per IP per hour to stop the surface from being weaponised as an inbox-spam vector. Tokens are one-hour single-use; expired or used rows are reaped opportunistically on each fresh issue.
 
 > ⚠️ **Single-replica only.** The in-process embedding worker holds its "currently
 > running?" flag in module memory. Running `docker compose up --scale app=N`
@@ -141,7 +162,7 @@ If you intend to expose the instance to strangers (or hit Show HN), make sure th
 - `X-Forwarded-For` is forwarded by the proxy so the in-process rate limiter can key on real client IPs.
 - An offsite database backup is scheduled (see [Backups](#backups)).
 
-The signup, login, and token-mint endpoints have built-in per-IP / per-user rate limits ([auth.md](auth.md#rate-limiting)). This is defense-in-depth on top of the proxy, not a substitute.
+The signup, login, password-reset, and token-mint endpoints have built-in per-IP / per-user rate limits ([auth.md](auth.md#rate-limiting)). This is defense-in-depth on top of the proxy, not a substitute.
 
 ### Health endpoint
 

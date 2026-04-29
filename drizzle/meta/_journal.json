@@ -64,6 +64,13 @@
       "when": 1777680000002,
       "tag": "0008_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777680000003,
+      "tag": "0009_password_reset",
+      "breakpoints": true
     }
   ]
 }
