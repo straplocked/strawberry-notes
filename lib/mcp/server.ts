@@ -30,15 +30,27 @@ function jsonResult(value: unknown) {
  * Build a per-request MCP server scoped to a single user. Every tool closes
  * over `userId`, so there is no way for a tool argument to reach another
  * user's data.
+ *
+ * MCP callers — by definition bearer-token-only (the route gates session
+ * cookies in [app/api/mcp/route.ts](../../app/api/mcp/route.ts)) — never see
+ * the user's Private Notes. Every read tool below threads
+ * `includePrivate: false` into the underlying service call. The session
+ * (browser) read paths still see private notes via the same service
+ * functions, called from the `/api/notes/*` route handlers.
  */
 export function buildMcpServer(userId: string): McpServer {
   const server = new McpServer({ name: 'strawberry-notes', version: '1.0.0' });
+
+  // Bound once so each tool body just spreads it into its options arg.
+  // Renaming this to `MCP_READ_OPTS` would be more dramatic but the call
+  // sites read fine with the current name.
+  const mcpReadOpts = { includePrivate: false } as const;
 
   server.registerTool(
     'list_notes',
     {
       description:
-        'List notes belonging to the authenticated user. Use `folder` to filter: "all" (default), "pinned", "trash", a folder id, or a time-range token ("today", "yesterday", "past7", "past30"). Use `tag` for a tag id. Use `q` for full-text search.',
+        'List notes belonging to the authenticated user. Use `folder` to filter: "all" (default), "pinned", "trash", a folder id, or a time-range token ("today", "yesterday", "past7", "past30"). Use `tag` for a tag id. Use `q` for full-text search. Notes the user has marked Private are never returned via MCP.',
       inputSchema: {
         folder: z.string().optional(),
         tag: z.string().optional(),
@@ -46,11 +58,15 @@ export function buildMcpServer(userId: string): McpServer {
       },
     },
     async (args) => {
-      const rows = await listNotes(userId, {
-        folder: args.folder,
-        tagId: args.tag ?? null,
-        q: args.q ?? null,
-      });
+      const rows = await listNotes(
+        userId,
+        {
+          folder: args.folder,
+          tagId: args.tag ?? null,
+          q: args.q ?? null,
+        },
+        mcpReadOpts,
+      );
       return jsonResult(rows);
     },
   );
@@ -59,11 +75,11 @@ export function buildMcpServer(userId: string): McpServer {
     'search_notes',
     {
       description:
-        'Full-text (keyword) search over all non-trashed notes. Good for exact strings, names, filenames, and short queries. For conceptual / meaning-based queries (e.g. "notes about burnout", "things I said about pricing"), prefer `search_semantic`.',
+        'Full-text (keyword) search over all non-trashed notes. Good for exact strings, names, filenames, and short queries. For conceptual / meaning-based queries (e.g. "notes about burnout", "things I said about pricing"), prefer `search_semantic`. Private Notes are excluded.',
       inputSchema: { query: z.string().min(1) },
     },
     async ({ query }) => {
-      const rows = await listNotes(userId, { q: query });
+      const rows = await listNotes(userId, { q: query }, mcpReadOpts);
       return jsonResult(rows);
     },
   );
@@ -72,7 +88,7 @@ export function buildMcpServer(userId: string): McpServer {
     'search_semantic',
     {
       description:
-        'Semantic (vector) search over all non-trashed notes. Prefer this over `search_notes` when the query describes a topic, concept, mood, or question rather than a specific string. Results are ranked by cosine similarity and include a `score` field in [0, 1] (higher = closer). Returns the same note shape as `list_notes`. Errors if the server has no embedding provider configured.',
+        'Semantic (vector) search over all non-trashed notes. Prefer this over `search_notes` when the query describes a topic, concept, mood, or question rather than a specific string. Results are ranked by cosine similarity and include a `score` field in [0, 1] (higher = closer). Returns the same note shape as `list_notes`. Private Notes are excluded. Errors if the server has no embedding provider configured.',
       inputSchema: {
         query: z.string().min(1).max(2000),
         k: z.number().int().positive().max(50).optional(),
@@ -80,7 +96,7 @@ export function buildMcpServer(userId: string): McpServer {
     },
     async ({ query, k }) => {
       try {
-        const rows = await semanticSearch(userId, query, { k });
+        const rows = await semanticSearch(userId, query, { k, ...mcpReadOpts });
         return jsonResult(rows);
       } catch (err) {
         if (err instanceof EmbeddingNotConfiguredError) {
@@ -95,17 +111,15 @@ export function buildMcpServer(userId: string): McpServer {
     'get_note',
     {
       description:
-        'Fetch a single note by id. Returns title, markdown body, tag ids, folder id, and timestamps.',
+        'Fetch a single note by id. Returns title, markdown body, tag ids, folder id, and timestamps. Returns "not found" for any note the user has marked Private — the body is encrypted and not visible to MCP.',
       inputSchema: { id: z.string().uuid() },
     },
     async ({ id }) => {
-      const note = await getNote(userId, id);
-      if (!note) return { ...textResult('not found'), isError: true };
-      // Private notes are content-free as far as MCP is concerned. Until the
-      // bearer-vs-session gating lands (PR 3) — which will ensure `getNote`
-      // never returns a private row to MCP at all — refuse explicitly so the
-      // ciphertext string can never be mistaken for a ProseMirror doc.
-      if (note.encryption !== null) {
+      // `includePrivate: false` short-circuits to null for private rows, so
+      // we never need to look at `note.encryption` here — but the explicit
+      // narrow keeps `note.content` typed as PMDoc for `docToMarkdown`.
+      const note = await getNote(userId, id, mcpReadOpts);
+      if (!note || note.encryption !== null) {
         return { ...textResult('not found'), isError: true };
       }
       return jsonResult({
@@ -349,23 +363,22 @@ export function buildMcpServer(userId: string): McpServer {
     'get_backlinks',
     {
       description:
-        'List notes that link to the given note via a `[[Wiki-style]]` title link. Returns source notes newest-updated first.',
+        'List notes that link to the given note via a `[[Wiki-style]]` title link. Returns source notes newest-updated first. Returns an empty list when the target is a Private Note.',
       inputSchema: { id: z.string().uuid() },
     },
-    async ({ id }) => jsonResult(await listBacklinks(userId, id)),
+    async ({ id }) => jsonResult(await listBacklinks(userId, id, mcpReadOpts)),
   );
 
   server.registerTool(
     'export_note_markdown',
     {
-      description: 'Return a note as Markdown (same output as the REST export endpoint).',
+      description:
+        'Return a note as Markdown (same output as the REST export endpoint). Returns "not found" for Private Notes — the body is encrypted and the server cannot render it.',
       inputSchema: { id: z.string().uuid() },
     },
     async ({ id }) => {
-      const note = await getNote(userId, id);
-      if (!note) return { ...textResult('not found'), isError: true };
-      // Same guard as `get_note`: don't try to render ciphertext as markdown.
-      if (note.encryption !== null) {
+      const note = await getNote(userId, id, mcpReadOpts);
+      if (!note || note.encryption !== null) {
         return { ...textResult('not found'), isError: true };
       }
       return textResult(docToMarkdown(note.content as PMDoc));

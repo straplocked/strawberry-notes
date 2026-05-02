@@ -155,12 +155,6 @@ export interface EditorProps {
 
   /* ---------------- Private Notes (v1.5) ---------------- */
   /**
-   * Whether the Private Notes feature surface should render at all (toolbar
-   * button + locked overlay action). Driven by `NEXT_PUBLIC_PRIVATE_NOTES`
-   * via the parent so this component stays SSR-safe.
-   */
-  privateNotesEnabled?: boolean;
-  /**
    * The plaintext PMDoc for a private note that has been decrypted by the
    * parent. Required when `note.encryption !== null` and the user is
    * unlocked; absent (or null) renders the locked overlay.
@@ -197,7 +191,6 @@ function EditorImpl({
   editorRef,
   readOnly = false,
   loading = false,
-  privateNotesEnabled = false,
   decryptedContent = null,
   privateNotesStatus = 'unconfigured',
   onRequestUnlock,
@@ -427,8 +420,7 @@ function EditorImpl({
   // crash. The decrypted PMDoc arrives via `decryptedContent` once the
   // parent has unwrapped it.
   if (note.encryption !== null && !decryptedContent) {
-    const canUnlock =
-      privateNotesEnabled && privateNotesStatus === 'locked' && !!onRequestUnlock;
+    const canUnlock = privateNotesStatus === 'locked' && !!onRequestUnlock;
     return (
       <div className={styles.root}>
         <div className={styles.emptyState}>
@@ -471,7 +463,7 @@ function EditorImpl({
       : (note.content as PMDoc);
   const { total: taskTotal, done: taskDone } = countTasks(noteContent);
   const isPrivate = note.encryption !== null;
-  const showLockToggle = privateNotesEnabled && !!onToggleLock;
+  const showLockToggle = !!onToggleLock;
   const isActive = (name: string, attrs?: Record<string, unknown>) =>
     editor?.isActive(name, attrs) ?? false;
 

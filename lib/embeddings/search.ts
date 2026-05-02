@@ -16,6 +16,15 @@ export interface SemanticSearchResult extends NoteListItemDTO {
 export interface SemanticSearchOptions {
   k?: number;
   fetchFn?: typeof fetch;
+  /**
+   * Defaults to `true`. Bearer-token callers (MCP, web clipper) pass `false`
+   * so private rows never leak. Today the underlying SQL already filters
+   * `encryption IS NULL` unconditionally because the embedding worker never
+   * embeds private notes — this option is wired for symmetry with
+   * `listNotes`/`getNote` and forward-compat if we ever embed encrypted
+   * bodies on the client.
+   */
+  includePrivate?: boolean;
 }
 
 /**

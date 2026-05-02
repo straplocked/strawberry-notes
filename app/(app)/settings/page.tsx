@@ -8,7 +8,6 @@ import { SecuritySection } from '@/components/app/settings/SecuritySection';
 import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
 import { WebhooksSection } from '@/components/app/settings/WebhooksSection';
-import { PRIVATE_NOTES_ENABLED } from '@/lib/private-notes/feature-flag';
 
 export const metadata: Metadata = { title: 'Settings — Strawberry Notes' };
 
@@ -50,7 +49,7 @@ export default function SettingsPage() {
       </header>
       <AppearanceSection />
       <SecuritySection />
-      {PRIVATE_NOTES_ENABLED && <PrivateNotesSection />}
+      <PrivateNotesSection />
       <TagsSection />
       <TokensSection />
       <WebhooksSection />

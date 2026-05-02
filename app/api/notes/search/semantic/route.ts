@@ -35,6 +35,12 @@ export async function POST(req: Request) {
   try {
     const results = await semanticSearch(a.userId, parsed.data.query, {
       k: parsed.data.k,
+      // Bearer-token callers (web clipper, future programmatic clients) never
+      // see the user's Private Notes — even though `lib/embeddings/search.ts`
+      // already filters `encryption IS NULL` unconditionally today, the
+      // explicit option is the contract for forward-compat and matches how
+      // every other read path passes the flag.
+      includePrivate: a.via === 'session',
     });
     return NextResponse.json(results);
   } catch (err) {

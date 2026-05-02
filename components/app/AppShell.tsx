@@ -31,7 +31,6 @@ import {
 } from '@/lib/api/hooks';
 import { dlog, drender, dtime } from '@/lib/debug';
 import type { FolderDTO, NoteListItemDTO, PMDoc } from '@/lib/types';
-import { PRIVATE_NOTES_ENABLED } from '@/lib/private-notes/feature-flag';
 import { usePrivateNotesStore } from '@/lib/store/private-notes-store';
 import { PrivateNotesUnlockModal } from './settings/PrivateNotesUnlockModal';
 import { PrivateNotesSetupModal } from './settings/PrivateNotesSetupModal';
@@ -112,7 +111,6 @@ export function AppShell() {
     });
   }, []);
   useEffect(() => {
-    if (!PRIVATE_NOTES_ENABLED) return;
     void pnHydrate();
     // Subscribe outside the React render cycle so the lock transition
     // doesn't trigger a set-state-in-effect lint warning. The Zustand
@@ -605,7 +603,6 @@ export function AppShell() {
   // Failures (wrong key, ciphertext tamper) are surfaced via the store's
   // `lastError` and the user can re-unlock from Settings.
   useEffect(() => {
-    if (!PRIVATE_NOTES_ENABLED) return;
     if (!activeNote || !activeIsPrivate || pnStatus !== 'unlocked') return;
     if (decryptedRef.current.has(activeNote.id)) return;
     const enc = activeNote.encryption;
@@ -627,7 +624,7 @@ export function AppShell() {
   }, [activeNote, activeIsPrivate, pnStatus, pnDecrypt, setDecrypted]);
 
   const onToggleLock = () => {
-    if (!PRIVATE_NOTES_ENABLED || !activeNote) return;
+    if (!activeNote) return;
     // Unconfigured → open the setup modal first; the user can come back to
     // toggle once setup is done.
     if (pnStatus === 'unconfigured') {
@@ -710,7 +707,6 @@ export function AppShell() {
       onTrash={onTrashNote}
       onRestore={onRestoreNote}
       onDeleteForever={onRequestDeleteForever}
-      privateNotesEnabled={PRIVATE_NOTES_ENABLED}
       decryptedContent={decryptedForActive}
       privateNotesStatus={pnStatus}
       onRequestUnlock={() => setPnUnlockOpen(true)}
@@ -810,18 +806,8 @@ export function AppShell() {
         actions={mobileMenuActions}
         onClose={() => setMobileMenuOpen(false)}
       />
-      {PRIVATE_NOTES_ENABLED && (
-        <>
-          <PrivateNotesUnlockModal
-            open={pnUnlockOpen}
-            onClose={() => setPnUnlockOpen(false)}
-          />
-          <PrivateNotesSetupModal
-            open={pnSetupOpen}
-            onClose={() => setPnSetupOpen(false)}
-          />
-        </>
-      )}
+      <PrivateNotesUnlockModal open={pnUnlockOpen} onClose={() => setPnUnlockOpen(false)} />
+      <PrivateNotesSetupModal open={pnSetupOpen} onClose={() => setPnSetupOpen(false)} />
     </>
   );
 }
