@@ -87,7 +87,10 @@ export async function resetPassword(rawEmail: string, password: string): Promise
   if (rows.length === 0) {
     throw new UserAdminError(`no user with email: ${email}`, 'not_found');
   }
-  notifyPasswordChanged(rows[0].id, { source: 'operator CLI (npm run user:reset)' });
+  // Awaited so the CLI doesn't `pool.end()` before the email goes out.
+  // Web callers don't actually call `resetPassword` — they call
+  // `consumePasswordResetToken`, which keeps the DB pool alive.
+  await notifyPasswordChanged(rows[0].id, { source: 'operator CLI (npm run user:reset)' });
   return rows[0];
 }
 

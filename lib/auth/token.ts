@@ -36,7 +36,7 @@ export async function issueToken(userId: string, name: string): Promise<IssuedTo
     .insert(apiTokens)
     .values({ userId, name: cleanName, prefix, tokenHash })
     .returning({ id: apiTokens.id });
-  notifyTokenCreated(userId, { tokenName: cleanName, tokenPrefix: prefix });
+  void notifyTokenCreated(userId, { tokenName: cleanName, tokenPrefix: prefix });
   return { id: row.id, token, prefix };
 }
 

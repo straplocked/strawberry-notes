@@ -54,7 +54,7 @@ export async function createWebhook(
     })
     .returning();
   const dto = rowToDTO(row);
-  notifyWebhookCreated(userId, {
+  void notifyWebhookCreated(userId, {
     webhookName: dto.name,
     webhookUrl: dto.url,
     events: dto.events,

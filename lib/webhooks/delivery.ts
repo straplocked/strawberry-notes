@@ -164,7 +164,7 @@ async function markFailure(webhookId: string, message: string): Promise<void> {
   // crossing fire — re-firing on subsequent failures would be noisy.
   const row = updated[0];
   if (row && !row.enabled && row.consecutiveFailures === DEAD_LETTER_AFTER) {
-    notifyWebhookDeadLetter(row.userId, {
+    void notifyWebhookDeadLetter(row.userId, {
       webhookName: row.name,
       webhookUrl: row.url,
       consecutiveFailures: row.consecutiveFailures,
