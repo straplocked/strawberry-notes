@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { consumePasswordResetToken } from '@/lib/auth/password-reset';
+import { getPublicBaseUrl } from '@/lib/http/public-url';
 import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 const Body = z.object({
@@ -28,7 +29,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
-  const result = await consumePasswordResetToken(parsed.data.token, parsed.data.password);
+  const result = await consumePasswordResetToken(parsed.data.token, parsed.data.password, {
+    baseUrl: getPublicBaseUrl(req),
+  });
   if (!result.ok) {
     const status = result.reason === 'password_too_short' ? 400 : 410;
     return NextResponse.json({ error: result.reason }, { status });

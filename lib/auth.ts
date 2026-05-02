@@ -13,6 +13,10 @@ const CredentialsSchema = z.object({
 });
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
+  // Self-hosted: trust the inbound Host header so callbacks work whether
+  // the operator pinned AUTH_URL or left it for runtime auto-derive (LAN
+  // IP, direct hostname, X-Forwarded-Host from a proxy).
+  trustHost: true,
   session: { strategy: 'jwt' },
   pages: { signIn: '/login' },
   providers: [

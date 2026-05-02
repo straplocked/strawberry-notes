@@ -38,9 +38,15 @@ export interface CreateWebhookInput {
   events: WebhookEvent[];
 }
 
+export interface CreateWebhookOpts {
+  /** Base URL for the notification email link; usually `getPublicBaseUrl(req)`. */
+  baseUrl?: string;
+}
+
 export async function createWebhook(
   userId: string,
   input: CreateWebhookInput,
+  opts: CreateWebhookOpts = {},
 ): Promise<IssuedWebhook> {
   const secret = generateSecret();
   const [row] = await db
@@ -59,6 +65,7 @@ export async function createWebhook(
     webhookUrl: dto.url,
     events: dto.events,
     createdAt: row.createdAt,
+    baseUrl: opts.baseUrl,
   });
   return { ...dto, secret };
 }

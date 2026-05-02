@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/auth/require';
+import { getPublicBaseUrl } from '@/lib/http/public-url';
 import { rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 import { createWebhook, isValidWebhookUrl, listWebhooks } from '@/lib/webhooks/service';
 import { WEBHOOK_EVENTS } from '@/lib/webhooks/types';
@@ -38,7 +39,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'invalid_url' }, { status: 400 });
   }
 
-  const issued = await createWebhook(a.userId, parsed.data);
+  const issued = await createWebhook(a.userId, parsed.data, {
+    baseUrl: getPublicBaseUrl(req),
+  });
   // The raw `secret` is returned ONCE; only the SHA-256 hash is retained.
   return NextResponse.json(issued);
 }

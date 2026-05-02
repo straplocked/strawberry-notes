@@ -79,7 +79,7 @@ Optional (with defaults):
 
 | Var                  | Default                    | Purpose                                      |
 | -------------------- | -------------------------- | -------------------------------------------- |
-| `AUTH_URL`           | `http://localhost:3200`    | Public URL; Auth.js uses it for callbacks.   |
+| `AUTH_URL`           | *(auto-derived from request, falls back to `http://localhost:3200`)* | Public URL; Auth.js uses it for callbacks **and** is the override for outbound email links. When unset, email links (password reset, signup confirmation, notifications) auto-derive from the host the user is hitting (LAN IP, hostname, or `X-Forwarded-Host`). Set explicitly for production behind a TLS proxy. |
 | `ALLOW_PUBLIC_SIGNUP`| `false`                    | When `false`, `/signup` 404s and accounts are bootstrapped via `npm run user:create`. Set to `true` only on instances where strangers may register. |
 | `APP_PORT`           | `3200`                     | Host port mapping (container stays at 3000). |
 | `UPLOAD_DIR`         | `./data/uploads`           | Where attachments land on disk.              |
@@ -119,7 +119,7 @@ To enable self-service password reset:
 
 1. Pick any SMTP relay — Postmark, Resend, SendGrid, Mailgun, AWS SES, your own postfix. They all expose SMTP; there is no per-provider adapter.
 2. Set `SMTP_HOST`, `SMTP_FROM`, and (if your relay requires auth) `SMTP_USER` + `SMTP_PASS`. Default port is 587 with STARTTLS; for implicit-TLS submission set `SMTP_PORT=465` and `SMTP_SECURE=true`.
-3. Confirm `AUTH_URL` matches the canonical public URL — it's used to build the reset link the user clicks.
+3. Decide on `AUTH_URL`. For LAN/dev access, leave it unset — email links auto-derive from the request host so links match whichever IP/hostname you're hitting. For production behind a TLS-terminating proxy, set it to the canonical public URL (`https://notes.example.com`) so links survive proxies that don't forward `X-Forwarded-Host`.
 4. `docker compose up -d`. No migration to run; the schema for `password_reset_tokens` ships with the image.
 
 Smoke test: open `/forgot-password`, submit your address, confirm the email arrives with a `${AUTH_URL}/reset-password?token=…` link, click through, set a new password, sign in.
@@ -240,7 +240,7 @@ notes.example.com {
 }
 ```
 
-When you do this, set `AUTH_URL=https://notes.example.com` in `.env` **before** starting the app; otherwise Auth.js redirects will target `http://localhost:3200` and break sign-in.
+When you do this, set `AUTH_URL=https://notes.example.com` in `.env` **before** starting the app. Auth.js itself reads this directly for callback URLs — without it, sign-in redirects will target `http://localhost:3200` and break. Outbound email links honour `X-Forwarded-Host`/`X-Forwarded-Proto` when `AUTH_URL` is unset, but `AUTH_URL` is the safer pin: not all proxies forward those headers.
 
 ---
 
@@ -329,6 +329,6 @@ Rollback: keep the previous image tag handy (`docker compose down && docker tag 
 ## Common Pitfalls
 
 - **Container binds to 3000, host binds to 3200.** Don't try to talk to the container on 3200.
-- **`AUTH_URL` must match the public URL.** The most common sign-in failure is `AUTH_URL=http://localhost:3200` behind an HTTPS proxy.
+- **`AUTH_URL` must match the public URL when behind a proxy.** Auth.js reads it for callbacks; without it, sign-in redirects 404. Email links auto-derive from the request host when `AUTH_URL` is unset, so LAN/dev usually doesn't need to set it — but production behind HTTPS does.
 - **Volumes persist on `compose down` but not on `compose down -v`.** Learn the difference before you run the second form in anger.
 - **Service worker caches aggressively in prod.** After deploying a significant UI change, tell users to hard-reload once or bump the SW version string in `public/sw.js`.

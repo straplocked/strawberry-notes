@@ -15,6 +15,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { users } from '../db/schema';
+import { getPublicBaseUrl } from '../http/public-url';
 import { isEmailConfigured, sendMail } from './client';
 import { isNotificationEnabled, type NotificationKind } from './preferences';
 import {
@@ -25,8 +26,16 @@ import {
   type PasswordChangedInput,
 } from './templates';
 
-function publicBaseUrl(): string {
-  return (process.env.AUTH_URL?.trim() || 'http://localhost:3200').replace(/\/+$/, '');
+/**
+ * Resolve the base URL used in notification email links. Callers in HTTP
+ * request scope should pass `ctx.baseUrl = getPublicBaseUrl(req)` so the
+ * link matches the host the user is actually using; non-HTTP callers
+ * (operator CLI, webhook delivery worker) leave it unset and fall back
+ * to AUTH_URL or the localhost default.
+ */
+function resolveBaseUrl(override: string | undefined): string {
+  if (override) return override.replace(/\/+$/, '');
+  return getPublicBaseUrl();
 }
 
 async function emailFor(userId: string): Promise<string | null> {
@@ -68,6 +77,8 @@ async function fire<T>(
 export interface PasswordChangedContext {
   source: PasswordChangedInput['source'];
   changedAt?: Date;
+  /** Override for the link host. Pass `getPublicBaseUrl(req)` from a route. */
+  baseUrl?: string;
 }
 
 export function notifyPasswordChanged(
@@ -75,6 +86,7 @@ export function notifyPasswordChanged(
   ctx: PasswordChangedContext,
   opts: FireOpts = {},
 ): Promise<void> {
+  const base = resolveBaseUrl(ctx.baseUrl);
   return fire(
     userId,
     'passwordChanged',
@@ -82,7 +94,7 @@ export function notifyPasswordChanged(
       passwordChangedEmail({
         to,
         changedAt: ctx.changedAt ?? new Date(),
-        loginUrl: `${publicBaseUrl()}/login`,
+        loginUrl: `${base}/login`,
         source: ctx.source,
       }),
     sendMail,
@@ -94,6 +106,7 @@ export interface TokenCreatedContext {
   tokenName: string;
   tokenPrefix: string;
   createdAt?: Date;
+  baseUrl?: string;
 }
 
 export function notifyTokenCreated(
@@ -101,6 +114,7 @@ export function notifyTokenCreated(
   ctx: TokenCreatedContext,
   opts: FireOpts = {},
 ): Promise<void> {
+  const base = resolveBaseUrl(ctx.baseUrl);
   return fire(
     userId,
     'tokenCreated',
@@ -110,7 +124,7 @@ export function notifyTokenCreated(
         tokenName: ctx.tokenName,
         tokenPrefix: ctx.tokenPrefix,
         createdAt: ctx.createdAt ?? new Date(),
-        tokensUrl: `${publicBaseUrl()}/settings`,
+        tokensUrl: `${base}/settings`,
       }),
     sendMail,
     opts,
@@ -122,6 +136,7 @@ export interface WebhookCreatedContext {
   webhookUrl: string;
   events: string[];
   createdAt?: Date;
+  baseUrl?: string;
 }
 
 export function notifyWebhookCreated(
@@ -129,6 +144,7 @@ export function notifyWebhookCreated(
   ctx: WebhookCreatedContext,
   opts: FireOpts = {},
 ): Promise<void> {
+  const base = resolveBaseUrl(ctx.baseUrl);
   return fire(
     userId,
     'webhookCreated',
@@ -139,7 +155,7 @@ export function notifyWebhookCreated(
         webhookUrl: ctx.webhookUrl,
         events: ctx.events,
         createdAt: ctx.createdAt ?? new Date(),
-        webhooksUrl: `${publicBaseUrl()}/settings`,
+        webhooksUrl: `${base}/settings`,
       }),
     sendMail,
     opts,
@@ -151,6 +167,7 @@ export interface WebhookDeadLetterContext {
   webhookUrl: string;
   consecutiveFailures: number;
   lastError: string;
+  baseUrl?: string;
 }
 
 export function notifyWebhookDeadLetter(
@@ -158,6 +175,7 @@ export function notifyWebhookDeadLetter(
   ctx: WebhookDeadLetterContext,
   opts: FireOpts = {},
 ): Promise<void> {
+  const base = resolveBaseUrl(ctx.baseUrl);
   return fire(
     userId,
     'webhookDeadLetter',
@@ -168,7 +186,7 @@ export function notifyWebhookDeadLetter(
         webhookUrl: ctx.webhookUrl,
         consecutiveFailures: ctx.consecutiveFailures,
         lastError: ctx.lastError,
-        webhooksUrl: `${publicBaseUrl()}/settings`,
+        webhooksUrl: `${base}/settings`,
       }),
     sendMail,
     opts,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { issuePasswordResetTokenForEmail } from '@/lib/auth/password-reset';
 import { isEmailConfigured, sendMail } from '@/lib/email/client';
 import { passwordResetEmail } from '@/lib/email/templates';
+import { getPublicBaseUrl } from '@/lib/http/public-url';
 import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 const Body = z.object({
@@ -42,8 +43,8 @@ export async function POST(req: Request) {
   // sees the same response.
   const issued = await issuePasswordResetTokenForEmail(parsed.data.email);
   if (issued) {
-    const baseUrl = process.env.AUTH_URL?.trim() || 'http://localhost:3200';
-    const resetUrl = `${baseUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(issued.token)}`;
+    const baseUrl = getPublicBaseUrl(req);
+    const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(issued.token)}`;
     const message = passwordResetEmail({
       to: parsed.data.email,
       resetUrl,
