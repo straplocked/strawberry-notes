@@ -29,7 +29,7 @@ function setup(overrides: Partial<SidebarProps> = {}) {
     theme: 'dark',
     onToggleTheme,
     density: 'balanced',
-    collapsedSections: { library: false, time: false, folders: false, tags: false },
+    collapsedSections: { time: false, folders: false, tags: false },
     onToggleSection,
     ...overrides,
   };
@@ -38,9 +38,10 @@ function setup(overrides: Partial<SidebarProps> = {}) {
 }
 
 describe('Sidebar — collapsible sections', () => {
-  it('renders all four section bodies when none are collapsed', () => {
+  it('renders the pinned rows plus every section body when none are collapsed', () => {
     setup();
     expect(screen.getByText('All Notes')).toBeInTheDocument();
+    expect(screen.getByText('Pinned')).toBeInTheDocument();
     // Time labels come from timeRangeLabel; the row for "today" is rendered.
     expect(screen.getByText('Today')).toBeInTheDocument();
     expect(screen.getByText('Recipes')).toBeInTheDocument();
@@ -49,7 +50,7 @@ describe('Sidebar — collapsible sections', () => {
 
   it('hides a section body when collapsedSections marks it true', () => {
     setup({
-      collapsedSections: { library: false, time: false, folders: false, tags: true },
+      collapsedSections: { time: false, folders: false, tags: true },
     });
     // Tags body is hidden, but the toggle remains.
     expect(screen.queryByText('#recipes')).not.toBeInTheDocument();
@@ -66,13 +67,25 @@ describe('Sidebar — collapsible sections', () => {
 
   it('reflects the collapsed/expanded state via aria-expanded', () => {
     setup({
-      collapsedSections: { library: false, time: true, folders: false, tags: false },
+      collapsedSections: { time: true, folders: false, tags: false },
     });
-    expect(screen.getByRole('button', { name: 'Library' })).toHaveAttribute(
+    // Folders is expanded -> aria-expanded="true"; Time is collapsed -> "false".
+    expect(screen.getByRole('button', { name: 'Folders' })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
     expect(screen.getByRole('button', { name: 'Time' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps All Notes and Pinned visible without a Library header', () => {
+    // Library was retired — those rows are pinned open at the top of the
+    // rail and there is no "Library" button to toggle.
+    setup({
+      collapsedSections: { time: true, folders: true, tags: true },
+    });
+    expect(screen.getByText('All Notes')).toBeInTheDocument();
+    expect(screen.getByText('Pinned')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Library' })).not.toBeInTheDocument();
   });
 
   it('hides the Tags section entirely when there are no tags', () => {
@@ -83,7 +96,7 @@ describe('Sidebar — collapsible sections', () => {
   it('expands a collapsed Folders section when "+" is pressed so the new-folder draft is visible', () => {
     const onAddFolder = vi.fn();
     const { onToggleSection } = setup({
-      collapsedSections: { library: false, time: false, folders: true, tags: false },
+      collapsedSections: { time: false, folders: true, tags: false },
       onAddFolder,
     });
     fireEvent.click(screen.getByRole('button', { name: 'New folder' }));

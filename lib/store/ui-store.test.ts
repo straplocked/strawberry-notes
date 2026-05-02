@@ -101,7 +101,7 @@ describe('hydrateSettingsFromStorage', () => {
         sidebarHidden: true,
         sidebarWidth: 260,
         noteListWidth: 340,
-        sidebarSections: { library: false, time: true, folders: false, tags: true },
+        sidebarSections: { time: true, folders: false, tags: true },
       }),
     );
     hydrateSettingsFromStorage();
@@ -112,7 +112,7 @@ describe('hydrateSettingsFromStorage', () => {
       sidebarHidden: true,
       sidebarWidth: 260,
       noteListWidth: 340,
-      sidebarSections: { library: false, time: true, folders: false, tags: true },
+      sidebarSections: { time: true, folders: false, tags: true },
     });
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--sn-sidebar-width')).toBe('260px');
@@ -151,10 +151,26 @@ describe('hydrateSettingsFromStorage', () => {
     window.localStorage.setItem('sn-settings', JSON.stringify({ sidebarSections: { tags: true } }));
     hydrateSettingsFromStorage();
     expect(useUIStore.getState().settings.sidebarSections).toEqual({
-      library: false,
       time: false,
       folders: false,
       tags: true,
+    });
+  });
+
+  it('drops retired section keys from older payloads', () => {
+    // Pre-pin-library payloads carried a `library` flag. After Library was
+    // pinned open we don't want that key leaking into the typed record;
+    // hydrate should silently drop it instead of producing a record that
+    // never matches DEFAULT_SETTINGS in equality checks.
+    window.localStorage.setItem(
+      'sn-settings',
+      JSON.stringify({ sidebarSections: { library: true, time: true } }),
+    );
+    hydrateSettingsFromStorage();
+    expect(useUIStore.getState().settings.sidebarSections).toEqual({
+      time: true,
+      folders: false,
+      tags: false,
     });
   });
 });
@@ -164,7 +180,6 @@ describe('toggleSidebarSection', () => {
     expect(useUIStore.getState().settings.sidebarSections.tags).toBe(false);
     useUIStore.getState().toggleSidebarSection('tags');
     expect(useUIStore.getState().settings.sidebarSections).toEqual({
-      library: false,
       time: false,
       folders: false,
       tags: true,

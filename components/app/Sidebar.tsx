@@ -793,40 +793,40 @@ function SidebarImpl(props: SidebarProps) {
       )}
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
+        {/* All Notes + Pinned live at the top of the rail without a header
+            — they're the two anchors users hit constantly, so taking the
+            "Library" label off and pinning them open removes a click and
+            a row of chrome. The collapsible-section pattern still owns
+            Time/Folders/Tags below. */}
         <div style={styles.section}>
-          {sectionHead('library', 'Library')}
-          {!isSectionCollapsed('library') && (
-            <div id="sn-section-library">
-              <div
-                className={navRowClass(isActiveKind('all'))}
-                style={{
-                  ...navRowStyle(isActiveKind('all'), dense),
-                  ...dropHighlight(dropTargetId === '__unfiled__'),
-                }}
-                onClick={() => onView({ kind: 'all' })}
-                {...makeDropHandlers('__unfiled__', null)}
-              >
-                <IconAll
-                  size={15}
-                  style={{ color: isActiveKind('all') ? 'var(--berry)' : 'var(--ink-3)' }}
-                />
-                <span>All Notes</span>
-                <span style={countStyle}>{props.allCount}</span>
-              </div>
-              <div
-                className={navRowClass(isActiveKind('pinned'))}
-                style={navRowStyle(isActiveKind('pinned'), dense)}
-                onClick={() => onView({ kind: 'pinned' })}
-              >
-                <IconPin
-                  size={15}
-                  style={{ color: isActiveKind('pinned') ? 'var(--berry)' : 'var(--ink-3)' }}
-                />
-                <span>Pinned</span>
-                <span style={countStyle}>{props.pinnedCount}</span>
-              </div>
-            </div>
-          )}
+          <div
+            className={navRowClass(isActiveKind('all'))}
+            style={{
+              ...navRowStyle(isActiveKind('all'), dense),
+              ...dropHighlight(dropTargetId === '__unfiled__'),
+            }}
+            onClick={() => onView({ kind: 'all' })}
+            {...makeDropHandlers('__unfiled__', null)}
+          >
+            <IconAll
+              size={15}
+              style={{ color: isActiveKind('all') ? 'var(--berry)' : 'var(--ink-3)' }}
+            />
+            <span>All Notes</span>
+            <span style={countStyle}>{props.allCount}</span>
+          </div>
+          <div
+            className={navRowClass(isActiveKind('pinned'))}
+            style={navRowStyle(isActiveKind('pinned'), dense)}
+            onClick={() => onView({ kind: 'pinned' })}
+          >
+            <IconPin
+              size={15}
+              style={{ color: isActiveKind('pinned') ? 'var(--berry)' : 'var(--ink-3)' }}
+            />
+            <span>Pinned</span>
+            <span style={countStyle}>{props.pinnedCount}</span>
+          </div>
         </div>
 
         <div style={styles.section}>
