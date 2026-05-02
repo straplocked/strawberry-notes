@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from './db/client';
 import { users } from './db/schema';
+import { isEmailConfirmationRequired } from './auth/signup-policy';
 
 const CredentialsSchema = z.object({
   email: z.string().email(),
@@ -30,6 +31,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         if (!user) return null;
         const ok = await compare(parsed.data.password, user.passwordHash);
         if (!ok) return null;
+        // When `REQUIRE_EMAIL_CONFIRMATION` is set, sign-in is blocked
+        // until the user clicks the confirmation link emailed at signup.
+        // Returning null here surfaces as the same generic "wrong email
+        // or password" the UI shows on bad creds — we don't leak whether
+        // the address exists or whether confirmation is the gate.
+        if (isEmailConfirmationRequired() && !user.emailConfirmedAt) {
+          return null;
+        }
         return { id: user.id, email: user.email };
       },
     }),

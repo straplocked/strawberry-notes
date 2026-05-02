@@ -45,6 +45,11 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // When `REQUIRE_EMAIL_CONFIRMATION` is set, signup creates the row with
+  // `emailConfirmedAt = null`; the credentials provider rejects sign-in
+  // until a confirm-email link has been clicked. Operator-created accounts
+  // (`npm run user:create`) come pre-confirmed.
+  emailConfirmedAt: timestamp('email_confirmed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -203,6 +208,45 @@ export const noteLinks = pgTable(
   }),
 );
 
+// Email-confirmation tokens. Same shape as password_reset_tokens but a
+// distinct table so the lifecycles don't tangle (a confirmation token can
+// outlive a password reset, vice versa, and the rate-limit / pruning rules
+// differ slightly). One outstanding row per user is the common case;
+// re-issuing reaps stale rows for that user.
+export const emailConfirmations = pgTable(
+  'email_confirmations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('email_confirmations_user_idx').on(t.userId),
+    hashUq: unique('email_confirmations_hash_uq').on(t.tokenHash),
+  }),
+);
+
+// Per-user toggles for the transactional notifications fired on
+// security-sensitive events (password change, token mint, webhook
+// create, webhook dead-letter). All default ON because they're the
+// "wait, that wasn't me" alert. Lazy-created on first read; absence
+// is treated as "all defaults".
+export const userEmailPreferences = pgTable('user_email_preferences', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  passwordChanged: boolean('password_changed').notNull().default(true),
+  tokenCreated: boolean('token_created').notNull().default(true),
+  webhookCreated: boolean('webhook_created').notNull().default(true),
+  webhookDeadLetter: boolean('webhook_dead_letter').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Self-service password-reset tokens. One row per outstanding request;
 // tokens are hashed (SHA-256) and single-use. The raw token is emailed
 // to the user and never stored. `expires_at` drives the validity check;
@@ -267,3 +311,5 @@ export type ApiToken = InferSelectModel<typeof apiTokens>;
 export type NoteLink = InferSelectModel<typeof noteLinks>;
 export type Webhook = InferSelectModel<typeof webhooks>;
 export type PasswordResetToken = InferSelectModel<typeof passwordResetTokens>;
+export type EmailConfirmation = InferSelectModel<typeof emailConfirmations>;
+export type UserEmailPreferences = InferSelectModel<typeof userEmailPreferences>;

@@ -2,6 +2,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
 import { apiTokens } from '../db/schema';
+import { notifyTokenCreated } from '../email/notifications';
 
 const TOKEN_PREFIX = 'snb_';
 const TOKEN_BYTES = 32;
@@ -30,10 +31,12 @@ export async function issueToken(userId: string, name: string): Promise<IssuedTo
   const token = `${TOKEN_PREFIX}${body}`;
   const prefix = token.slice(0, TOKEN_PREFIX.length + DISPLAY_PREFIX_LEN);
   const tokenHash = hash(token);
+  const cleanName = name.trim().slice(0, 80) || 'token';
   const [row] = await db
     .insert(apiTokens)
-    .values({ userId, name: name.trim().slice(0, 80) || 'token', prefix, tokenHash })
+    .values({ userId, name: cleanName, prefix, tokenHash })
     .returning({ id: apiTokens.id });
+  notifyTokenCreated(userId, { tokenName: cleanName, tokenPrefix: prefix });
   return { id: row.id, token, prefix };
 }
 

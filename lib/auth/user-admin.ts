@@ -9,6 +9,7 @@ import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { users } from '../db/schema';
+import { notifyPasswordChanged } from '../email/notifications';
 import { seedFirstRunContent } from './first-run';
 
 export class UserAdminError extends Error {
@@ -49,9 +50,11 @@ export async function createUser(
   const passwordHash = await hash(password, 10);
 
   try {
+    // Operator-created accounts come pre-confirmed — there's no email
+    // round-trip to validate the address against, the operator vouches for it.
     const [user] = await db
       .insert(users)
-      .values({ email, passwordHash })
+      .values({ email, passwordHash, emailConfirmedAt: new Date() })
       .returning({ id: users.id, email: users.email });
 
     await seedFirstRunContent(user.id);
@@ -84,6 +87,7 @@ export async function resetPassword(rawEmail: string, password: string): Promise
   if (rows.length === 0) {
     throw new UserAdminError(`no user with email: ${email}`, 'not_found');
   }
+  notifyPasswordChanged(rows[0].id, { source: 'operator CLI (npm run user:reset)' });
   return rows[0];
 }
 

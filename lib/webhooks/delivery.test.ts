@@ -7,10 +7,20 @@ const updateCalls: UpdateCall[] = [];
 
 vi.mock('../db/client', () => {
   const updateChain = (set: Record<string, unknown>) => ({
-    where: () => {
-      updateCalls.push({ set });
-      return Promise.resolve();
-    },
+    where: () => ({
+      // markFailure() reads .returning() to know whether the row crossed
+      // the dead-letter threshold; success path doesn't await it. Return
+      // an empty array so the dead-letter notify never fires under test.
+      returning: () => {
+        updateCalls.push({ set });
+        return Promise.resolve([] as Array<Record<string, unknown>>);
+      },
+      // markSuccess() awaits the where() promise directly.
+      then: (resolve: (v: unknown) => void) => {
+        updateCalls.push({ set });
+        resolve(undefined);
+      },
+    }),
   });
   return {
     db: {

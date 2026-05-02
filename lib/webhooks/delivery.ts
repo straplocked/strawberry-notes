@@ -11,6 +11,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { webhooks } from '../db/schema';
+import { notifyWebhookDeadLetter } from '../email/notifications';
 import { signatureHeader } from './secret';
 import type { WebhookEvent, WebhookPayload } from './types';
 
@@ -137,7 +138,7 @@ async function markSuccess(webhookId: string): Promise<void> {
 async function markFailure(webhookId: string, message: string): Promise<void> {
   // Atomic increment + disable trigger in a single UPDATE so a concurrent
   // delivery cannot race the dead-letter check.
-  await db
+  const updated = await db
     .update(webhooks)
     .set({
       lastFailureAt: new Date(),
@@ -148,7 +149,28 @@ async function markFailure(webhookId: string, message: string): Promise<void> {
                           else ${webhooks.enabled}
                       end`,
     })
-    .where(eq(webhooks.id, webhookId));
+    .where(eq(webhooks.id, webhookId))
+    .returning({
+      userId: webhooks.userId,
+      name: webhooks.name,
+      url: webhooks.url,
+      enabled: webhooks.enabled,
+      consecutiveFailures: webhooks.consecutiveFailures,
+    });
+
+  // Fire the dead-letter notification exactly when the row crossed the
+  // threshold. The CASE in the UPDATE means `enabled` is now `false` and
+  // `consecutiveFailures` is exactly `DEAD_LETTER_AFTER` only on the
+  // crossing fire — re-firing on subsequent failures would be noisy.
+  const row = updated[0];
+  if (row && !row.enabled && row.consecutiveFailures === DEAD_LETTER_AFTER) {
+    notifyWebhookDeadLetter(row.userId, {
+      webhookName: row.name,
+      webhookUrl: row.url,
+      consecutiveFailures: row.consecutiveFailures,
+      lastError: message.slice(0, 500),
+    });
+  }
 }
 
 /** Test-only: expose the dead-letter threshold for assertions. */

@@ -28,6 +28,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import { db } from '../db/client';
 import { passwordResetTokens, users } from '../db/schema';
+import { notifyPasswordChanged } from '../email/notifications';
 
 const TOKEN_PREFIX = 'srt_';
 const TOKEN_BYTES = 32;
@@ -141,6 +142,8 @@ export async function consumePasswordResetToken(
 
     const passwordHash = await bcryptHash(newPassword, 10);
     await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
+
+    notifyPasswordChanged(row.userId, { source: 'self-service reset', changedAt: now });
 
     return { ok: true, userId: row.userId };
   });

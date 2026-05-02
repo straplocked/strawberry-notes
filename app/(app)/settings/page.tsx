@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { EmailPreferencesSection } from '@/components/app/settings/EmailPreferencesSection';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
 import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
@@ -46,6 +47,7 @@ export default function SettingsPage() {
       <TagsSection />
       <TokensSection />
       <WebhooksSection />
+      <EmailPreferencesSection />
       <McpClientsSection />
     </main>
   );

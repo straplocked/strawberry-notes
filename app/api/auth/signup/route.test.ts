@@ -71,7 +71,8 @@ describe('POST /api/auth/signup', () => {
     const res = await POST(postJson({ email: 'A@Example.com', password: 'hunter2hunter' }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, userId: 'u-1' });
+    // confirmationRequired: false because REQUIRE_EMAIL_CONFIRMATION is unset under test.
+    expect(body).toEqual({ ok: true, userId: 'u-1', confirmationRequired: false });
     // Three inserts: user + folder + welcome note (via seedFirstRunContent).
     expect(state.inserts).toBe(3);
   });

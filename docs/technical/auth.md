@@ -96,6 +96,8 @@ Auth-adjacent endpoints are protected by a per-process in-memory token-bucket li
 | `POST /api/auth/callback/credentials`   | 10 per IP per minute, capacity 10            |
 | `POST /api/auth/forgot-password`        | 3 per IP per hour, capacity 3                |
 | `POST /api/auth/reset-password`         | 10 per IP per hour, capacity 10              |
+| `POST /api/auth/confirm-email`          | 10 per IP per hour, capacity 10              |
+| `POST /api/auth/resend-confirmation`    | 3 per IP per hour, capacity 3                |
 | `POST /api/tokens` (issue access token) | 20 per signed-in user per hour, capacity 20  |
 | `POST /api/webhooks` (mint webhook)     | 20 per signed-in user per hour, capacity 20  |
 
@@ -124,6 +126,17 @@ Configure `SMTP_HOST` + `SMTP_FROM` (see [deployment.md](deployment.md#smtp--ema
 Token-row lifecycle: stale rows for the user (expired or already used) are reaped opportunistically on every fresh issue, so there is no cron job. Existing JWT sessions remain valid through a reset — the user signs in afresh on their next visit.
 
 When `SMTP_HOST` is unset the **Forgot password?** page still loads but explicitly tells the user the operator needs to run `npm run user:reset` (or to configure SMTP). The `POST /api/auth/forgot-password` response carries `{ ok: true, configured: false }` for that case so the page can render the operator-pathway hint without leaking which addresses exist.
+
+### Email-confirmation on signup (v1.4)
+
+Operator-level toggle, not per-user: setting `REQUIRE_EMAIL_CONFIRMATION=true` (default `false`) gates sign-in on a confirmation round-trip. The flow:
+
+1. `POST /api/auth/signup` creates the row with `users.email_confirmed_at = null` and emails the user a `${AUTH_URL}/confirm-email?token=ecf_<64-hex>` link. The response carries `{ ok: true, confirmationRequired: true }` so the signup form shows a "check your inbox" panel instead of trying `signIn()`.
+2. The credentials provider in `lib/auth.ts` rejects sign-in when `email_confirmed_at IS NULL` and confirmation is required. The rejection is indistinguishable from a wrong-password rejection — we don't leak whether the address exists or whether confirmation is the gate.
+3. `/confirm-email?token=…` auto-POSTs to `/api/auth/confirm-email`; success flips `email_confirmed_at` inside the same transaction that marks the token used.
+4. Lost the link? `/confirm-email` (without `?token=`) shows a resend form that hits `POST /api/auth/resend-confirmation` (3/IP/hr, no enumeration).
+
+Tokens live in `email_confirmations` (parallels `password_reset_tokens` shape — single-use, 24-hour TTL, opportunistic reaping on each fresh issue). Operator-created accounts via `npm run user:create` are always pre-confirmed regardless of the env. **Implies SMTP must be configured** — without it the user can't receive the link and would be locked out of their own brand-new account; the operator should add `SMTP_HOST` first or leave `REQUIRE_EMAIL_CONFIRMATION=false`.
 
 ### Operator-driven reset (always available)
 

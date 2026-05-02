@@ -15,12 +15,13 @@ Postgres 16, accessed via Drizzle ORM (`drizzle-orm` + `drizzle-kit`).
 
 ### `users`
 
-| Column         | Type           | Notes                          |
-| -------------- | -------------- | ------------------------------ |
-| `id`           | `uuid` PK      | `gen_random_uuid()`            |
-| `email`        | `text` UNIQUE  | lowercased by the signup route |
-| `passwordHash` | `text`         | `bcryptjs.hash(..., 10)`       |
-| `createdAt`    | `timestamptz`  | default `now()`                |
+| Column              | Type           | Notes                          |
+| ------------------- | -------------- | ------------------------------ |
+| `id`                | `uuid` PK      | `gen_random_uuid()`            |
+| `email`             | `text` UNIQUE  | lowercased by the signup route |
+| `passwordHash`      | `text`         | `bcryptjs.hash(..., 10)`       |
+| `emailConfirmedAt`  | `timestamptz?` | non-null once the user has clicked the signup-confirmation link, or set at create time when `REQUIRE_EMAIL_CONFIRMATION` is unset / operator-created |
+| `createdAt`         | `timestamptz`  | default `now()`                |
 
 ### `folders`
 
@@ -118,6 +119,32 @@ created. See [editor.md](editor.md) for the resolution flow.
 | `storagePath` | `text`       | path relative to `UPLOAD_DIR`                |
 | `createdAt`   | `timestamptz`|                                              |
 
+### `email_confirmations`
+
+| Column       | Type            | Notes                                                                     |
+| ------------ | --------------- | ------------------------------------------------------------------------- |
+| `id`         | `uuid` PK       |                                                                           |
+| `userId`     | `uuid` FK       | → `users.id` ON DELETE CASCADE                                            |
+| `tokenHash`  | `text` UNIQUE   | SHA-256 hex of the `ecf_…` confirmation token (raw value emailed once, never stored) |
+| `expiresAt`  | `timestamptz`   | 24 hours after issue (default)                                            |
+| `usedAt`     | `timestamptz?`  | flipped on successful confirm; single-use                                 |
+| `createdAt`  | `timestamptz`   |                                                                           |
+
+Index: `email_confirmations_user_idx` on `(userId)`. Same shape as `password_reset_tokens` but a distinct table — the lifecycles don't tangle. See [auth.md](auth.md#email-confirmation-on-signup-v14).
+
+### `user_email_preferences`
+
+| Column                | Type            | Notes                                                                  |
+| --------------------- | --------------- | ---------------------------------------------------------------------- |
+| `userId`              | `uuid` PK FK    | → `users.id` ON DELETE CASCADE                                          |
+| `passwordChanged`     | `boolean`       | default `true` — alert on password change (self-service or operator).  |
+| `tokenCreated`        | `boolean`       | default `true` — alert on personal-access-token mint.                   |
+| `webhookCreated`      | `boolean`       | default `true` — alert on outbound webhook create.                      |
+| `webhookDeadLetter`   | `boolean`       | default `true` — alert when a webhook auto-disables after 5 fails.      |
+| `updatedAt`           | `timestamptz`   |                                                                        |
+
+Lazy-created on first PATCH to `/api/email-preferences`; absence of a row means "all defaults ON" (the security-relevant "wait, that wasn't me" alert is the floor). The signup-confirmation email is **not** a per-user toggle — it's an instance-level operator setting (`REQUIRE_EMAIL_CONFIRMATION` env).
+
 ### `password_reset_tokens`
 
 | Column       | Type            | Notes                                                                     |
@@ -155,13 +182,15 @@ Index: `webhooks_user_idx` on `(userId)`. See [webhooks.md](webhooks.md) for the
 ## Relations (Drizzle)
 
 ```
-users ──┬── folders                (1:N, cascade)
-        ├── notes                  (1:N, cascade)
-        ├── tags                   (1:N, cascade)
-        ├── attachments            (1:N, cascade)
-        ├── api_tokens             (1:N, cascade)
-        ├── webhooks               (1:N, cascade)
-        └── password_reset_tokens  (1:N, cascade)
+users ──┬── folders                  (1:N, cascade)
+        ├── notes                    (1:N, cascade)
+        ├── tags                     (1:N, cascade)
+        ├── attachments              (1:N, cascade)
+        ├── api_tokens               (1:N, cascade)
+        ├── webhooks                 (1:N, cascade)
+        ├── password_reset_tokens    (1:N, cascade)
+        ├── email_confirmations      (1:N, cascade)
+        └── user_email_preferences   (1:1, cascade)
 
 folders ── folders           (self-FK, cascade — nested folder tree)
 folders ── notes             (1:N, set null on folder delete)
@@ -187,6 +216,7 @@ Generated into `drizzle/`:
 - `0007_nested_folders.sql` — `folders.parent_id` self-FK + `folders_parent_idx`.
 - `0008_webhooks.sql` — `webhooks` table for v1.4 outbound event delivery.
 - `0009_password_reset.sql` — `password_reset_tokens` table for v1.4 self-service reset.
+- `0010_email_notifications.sql` — `email_confirmations` table, `user_email_preferences` table, `users.email_confirmed_at` column.
 
 Workflow:
 
