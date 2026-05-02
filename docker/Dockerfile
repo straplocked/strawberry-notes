@@ -54,6 +54,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/resolve-pkg-maps ./n
 # /app/node_modules/bcryptjs. The operator CLIs in scripts/ require it via the
 # normal resolver, so copy it in explicitly.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
+# Same situation for nodemailer — `lib/email/client.ts` is loaded by the
+# operator CLIs (e.g. `user:reset`, which fires the passwordChanged
+# notification through it). nodemailer ships with no production deps, so
+# the package itself is the only copy needed.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/nodemailer ./node_modules/nodemailer
 # Re-create the tsx bin symlink so it resolves sibling files via __dirname.
 # A plain COPY of a symlink dereferences it on most builders, which breaks tsx.
 RUN mkdir -p ./node_modules/.bin \
