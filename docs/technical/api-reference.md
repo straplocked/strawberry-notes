@@ -60,7 +60,48 @@ Request: `{ "token": "srt_…", "password": "≥8 chars" }`.
 - `410 { error: "invalid" | "expired" | "used" }` — token rejected.
 - Rate limited: 10/IP/hr.
 
-Atomic: the row's `usedAt` flips inside the same transaction that updates the user's password hash. Concurrent reuse loses the race and gets `used`.
+Atomic: the row's `usedAt` flips inside the same transaction that updates the user's password hash. Concurrent reuse loses the race and gets `used`. Fires the `passwordChanged` notification (gated by the user's preference + SMTP config).
+
+### `POST /api/auth/confirm-email`
+
+Consume a `ecf_<64-hex>` confirmation token issued at signup when `REQUIRE_EMAIL_CONFIRMATION=true`.
+
+Request: `{ "token": "ecf_…" }`.
+
+- `200 { ok: true }` — flips `users.email_confirmed_at` inside the same transaction that marks the token used.
+- `400 { error: "invalid_body" }`.
+- `410 { error: "invalid" | "expired" | "used" }`.
+- Rate limited: 10/IP/hr.
+
+24-hour TTL. Single-use; concurrent reuse loses the race.
+
+### `POST /api/auth/resend-confirmation`
+
+Re-issue a confirmation token + email the link.
+
+Request: `{ "email": "user@example.com" }`.
+
+Always `200`, regardless of whether the email is registered or already confirmed:
+
+- `{ ok: true, configured: true }` — SMTP is configured; if the address matches a pending account, a fresh link is on the way.
+- `{ ok: true, configured: false }` — SMTP isn't configured; page renders an operator-pathway hint.
+- Rate limited: 3/IP/hr.
+
+---
+
+## Email preferences
+
+User-scoped per-notification toggles, gated by the session cookie. Defaults: every kind ON.
+
+### `GET /api/email-preferences`
+
+Response: `{ passwordChanged, tokenCreated, webhookCreated, webhookDeadLetter }` — booleans. Lazy-loaded; if the user has never written to the table the defaults are returned without creating a row.
+
+### `PATCH /api/email-preferences`
+
+Request: any subset of the four boolean keys above. Empty patches are rejected with `invalid_body`. Returns the full preference set after the upsert.
+
+The fifth email — signup confirmation — is **not** a per-user toggle; it's an instance-level setting (`REQUIRE_EMAIL_CONFIRMATION` env). See [auth.md](auth.md#email-confirmation-on-signup-v14).
 
 ---
 

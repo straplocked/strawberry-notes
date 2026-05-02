@@ -205,6 +205,21 @@ A blockquote with the source URL is automatically prepended. See [../technical/e
 
 ---
 
+## Email notifications
+
+When the operator has SMTP configured, you'll get a transactional email when something security-relevant happens on your account:
+
+- **Password changed** — your password was just updated (by you, by a self-service reset, or by an operator).
+- **New personal access token** — a new MCP / API token was minted on your account.
+- **New webhook** — a new outbound webhook was added.
+- **Webhook auto-disabled** — one of your webhooks hit the dead-letter threshold (5 consecutive failures) and was disabled.
+
+Each one defaults ON because they're the "wait, that wasn't me" alert. Turn any of them off in **Settings → Email notifications**.
+
+If the operator has set `REQUIRE_EMAIL_CONFIRMATION=true`, signup also sends a one-click confirmation link before sign-in is allowed. That one is operator-level, not per-user — your account flips to confirmed the moment you click it, and you won't see another.
+
+---
+
 ## Webhooks
 
 **Settings → Webhooks** lets you POST a small JSON payload to any HTTPS endpoint when something happens in your notes. Five events:

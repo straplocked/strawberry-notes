@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '../db/client';
 import { webhooks } from '../db/schema';
+import { notifyWebhookCreated } from '../email/notifications';
 import { generateSecret, hashSecret } from './secret';
 import { isWebhookEvent, type IssuedWebhook, type WebhookDTO, type WebhookEvent } from './types';
 
@@ -52,7 +53,14 @@ export async function createWebhook(
       events: input.events.filter(isWebhookEvent),
     })
     .returning();
-  return { ...rowToDTO(row), secret };
+  const dto = rowToDTO(row);
+  notifyWebhookCreated(userId, {
+    webhookName: dto.name,
+    webhookUrl: dto.url,
+    events: dto.events,
+    createdAt: row.createdAt,
+  });
+  return { ...dto, secret };
 }
 
 export interface UpdateWebhookInput {

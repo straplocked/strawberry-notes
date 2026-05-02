@@ -12,6 +12,7 @@ export function SignupForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [pendingConfirmation, setPendingConfirmation] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +29,14 @@ export function SignupForm() {
       setPending(false);
       return;
     }
+    const body = (await res.json().catch(() => ({}))) as { confirmationRequired?: boolean };
+    if (body.confirmationRequired) {
+      // The credentials provider rejects sign-in until the email link is
+      // clicked. Show a "check your inbox" panel instead of trying signIn.
+      setPending(false);
+      setPendingConfirmation(true);
+      return;
+    }
     const signInRes = await signIn('credentials', {
       email,
       password,
@@ -42,10 +51,27 @@ export function SignupForm() {
     router.refresh();
   }
 
+  if (pendingConfirmation) {
+    return (
+      <>
+        <h1 className={styles.h1}>Check your inbox</h1>
+        <p className={styles.subtitle}>
+          We just emailed <strong>{email}</strong> a link to confirm your account. Click it within
+          24 hours and you’ll be able to sign in.
+        </p>
+        <div className={styles.switch}>
+          <Link className={styles.link} href="/login">
+            Back to sign in
+          </Link>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <h1 className={styles.h1}>Plant your notebook</h1>
-      <p className={styles.subtitle}>8+ character password. No email verification — just you and your notes.</p>
+      <p className={styles.subtitle}>8+ character password.</p>
       <form className={styles.form} onSubmit={onSubmit}>
         <div>
           <label className={styles.label} htmlFor="email">

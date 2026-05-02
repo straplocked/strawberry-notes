@@ -3,8 +3,11 @@ import { hash } from 'bcryptjs';
 import { z } from 'zod';
 import { db } from '@/lib/db/client';
 import { users } from '@/lib/db/schema';
+import { issueEmailConfirmationToken } from '@/lib/auth/email-confirmation';
 import { seedFirstRunContent } from '@/lib/auth/first-run';
-import { isPublicSignupEnabled } from '@/lib/auth/signup-policy';
+import { isEmailConfirmationRequired, isPublicSignupEnabled } from '@/lib/auth/signup-policy';
+import { sendMail } from '@/lib/email/client';
+import { emailConfirmationEmail } from '@/lib/email/templates';
 import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 const Body = z.object({
@@ -37,16 +40,46 @@ export async function POST(req: Request) {
   const passwordHash = await hash(parsed.data.password, 10);
 
   try {
+    const requireConfirm = isEmailConfirmationRequired();
     const [user] = await db
       .insert(users)
-      .values({ email, passwordHash })
+      .values({
+        email,
+        passwordHash,
+        // Auto-confirm when the operator hasn't required email round-trip;
+        // the unset path matches v1.3's behaviour exactly.
+        emailConfirmedAt: requireConfirm ? null : new Date(),
+      })
       .returning({ id: users.id, email: users.email });
 
     // First-run: seed the Journal folder + a Welcome note so the empty
     // state doubles as a feature tour.
     await seedFirstRunContent(user.id);
 
-    return NextResponse.json({ ok: true, userId: user.id });
+    if (requireConfirm) {
+      // Issue + email a confirmation link. Fire-and-forget on the email
+      // send — the client gets `confirmationRequired: true` so the UI can
+      // show "check your inbox" without blocking on SMTP latency.
+      const issued = await issueEmailConfirmationToken(user.id);
+      const baseUrl = process.env.AUTH_URL?.trim() || 'http://localhost:3200';
+      const confirmUrl = `${baseUrl.replace(/\/+$/, '')}/confirm-email?token=${encodeURIComponent(issued.token)}`;
+      void sendMail(
+        emailConfirmationEmail({
+          to: user.email,
+          confirmUrl,
+          expiresInHours: 24,
+        }),
+      ).catch((err) => {
+        console.error('[signup] confirmation email send failed', err);
+      });
+      return NextResponse.json({
+        ok: true,
+        userId: user.id,
+        confirmationRequired: true,
+      });
+    }
+
+    return NextResponse.json({ ok: true, userId: user.id, confirmationRequired: false });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown';
     if (message.includes('duplicate') || message.includes('unique')) {

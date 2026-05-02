@@ -31,6 +31,10 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # When `true`, signup creates accounts with `emailConfirmedAt = null`
+      # and the credentials provider rejects sign-in until the user clicks
+      # the confirmation link emailed at signup. Implies SMTP must be set.
+      REQUIRE_EMAIL_CONFIRMATION: ${REQUIRE_EMAIL_CONFIRMATION:-false}
     ports:
       # Host port 3200 chosen to avoid collisions with other local containers
       # (3000 / 3100 were already in use). Override via APP_PORT in .env.
