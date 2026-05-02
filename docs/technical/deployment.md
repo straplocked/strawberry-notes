@@ -126,6 +126,57 @@ Smoke test: open `/forgot-password`, submit your address, confirm the email arri
 
 The reset path is rate-limited at 3 requests per IP per hour to stop the surface from being weaponised as an inbox-spam vector. Tokens are one-hour single-use; expired or used rows are reaped opportunistically on each fresh issue.
 
+#### Dev: catching mail with mailpit
+
+For dev / homelab work you almost certainly don't want to send real email — point SMTP at a [mailpit](https://github.com/axllent/mailpit) catch-all instead. Mailpit accepts any SMTP submission, never relays anything outbound, and shows everything caught in a Gmail-like web UI on port 8025.
+
+Two install options:
+
+- **Sibling container on the same Docker host as the app** (development VM, single-machine setup). Easiest for "I just want to test this once" — does not ship with the production compose. Run alongside the app:
+
+  ```bash
+  docker run -d --name mailpit \
+    --restart unless-stopped \
+    -p 8025:8025 -p 1025:1025 \
+    axllent/mailpit:latest
+  ```
+
+  Then in `.env`:
+
+  ```
+  SMTP_HOST=host.docker.internal   # Linux: use the host LAN IP instead
+  SMTP_PORT=1025
+  SMTP_FROM=strawberry@dev.local
+  SMTP_SECURE=false
+  ```
+
+- **Standalone container on a homelab host** (Unraid, Synology, a dedicated mail-test box). Better long-term: production-shape parity with a real SMTP relay — the dev box's `SMTP_HOST` is a remote hostname, exactly the topology you'll use against Resend / Postmark / SES — plus any other homelab service (Sonarr, paperless-ngx, your own scripts) can share the same catch-all inbox.
+
+  ```bash
+  docker run -d --name mailpit \
+    --restart unless-stopped \
+    -p 8025:8025 -p 1025:1025 \
+    -v /mnt/user/appdata/mailpit:/data \
+    -e MP_DATABASE=/data/mailpit.db \
+    -e MP_MAX_MESSAGES=5000 \
+    axllent/mailpit:latest
+  ```
+
+  Then on the dev box, point `SMTP_HOST` at the homelab LAN IP:
+
+  ```
+  SMTP_HOST=192.168.1.77       # your homelab host
+  SMTP_PORT=1025
+  SMTP_FROM=strawberry@homelab.local
+  SMTP_SECURE=false
+  ```
+
+Either way: open `/forgot-password`, submit, watch the message land at `http://<mailpit-host>:8025`, click the reset link to walk the full UI.
+
+Mailpit accepts **unauthenticated submission by default** — leave `SMTP_USER` / `SMTP_PASS` unset. If you want SMTP AUTH on a shared homelab it supports `MP_SMTP_AUTH_FILE` and friends; see the upstream docs.
+
+When you flip from mailpit to a real relay (Resend / Postmark / SES) for production, change four env vars and rebuild — there's no code path to update.
+
 > ⚠️ **Single-replica only.** The in-process embedding worker holds its "currently
 > running?" flag in module memory. Running `docker compose up --scale app=N`
 > with `N > 1` and embeddings enabled will not corrupt data, but each replica
