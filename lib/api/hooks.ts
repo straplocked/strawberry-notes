@@ -241,6 +241,9 @@ export function useCreateNote() {
         updatedAt: now,
         tagIds: [],
         hasImage: false,
+        // Brand-new notes are always plaintext — Private Notes is an explicit
+        // post-create lock toggle, never a create-time mode.
+        private: false,
       };
 
       // Walk all `['notes', viewKey, q]` entries — skip those with an active search.
@@ -308,6 +311,7 @@ export function useCreateNote() {
                 updatedAt: note.updatedAt,
                 tagIds: note.tagIds,
                 hasImage: false,
+                private: note.encryption !== null,
               }
             : n,
         ),

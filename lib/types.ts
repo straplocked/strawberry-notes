@@ -29,6 +29,12 @@ export interface NoteListItemDTO {
   updatedAt: string;
   tagIds: string[];
   hasImage: boolean;
+  /**
+   * True when the note's body is end-to-end encrypted (Private Notes feature).
+   * The list endpoint always sets `snippet = ''` for these — the client renders
+   * the localised "🔒 Private — unlock to read" placeholder instead.
+   */
+  private: boolean;
 }
 
 /** ProseMirror JSON document. Opaque to the client code outside the editor. */
@@ -37,12 +43,34 @@ export interface PMDoc {
   content?: unknown[];
 }
 
+/**
+ * Per-note encryption envelope. Mirrors `notes.encryption` JSONB. The base64
+ * ciphertext lives in `NoteDTO.content` when this is non-null; the unwrapped
+ * Note Master Key is held only in the browser. See
+ * docs/technical/private-notes.md.
+ */
+export interface NoteEncryption {
+  v: number;
+  iv: string;
+}
+
 export interface NoteDTO {
   id: string;
   folderId: string | null;
   title: string;
-  content: PMDoc;
+  /**
+   * Plaintext ProseMirror JSON when the note is not private; base64-encoded
+   * AES-GCM ciphertext+tag string when {@link encryption} is non-null. The
+   * editor branches on `encryption` to decide whether to decrypt before
+   * rendering.
+   */
+  content: PMDoc | string;
+  /**
+   * Always `''` for private notes — the server does not see plaintext, so it
+   * has nothing to mirror. Plaintext notes get the usual flattened body.
+   */
   contentText: string;
+  encryption: NoteEncryption | null;
   pinned: boolean;
   tagIds: string[];
   trashedAt: string | null;

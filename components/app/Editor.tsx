@@ -35,7 +35,7 @@ import {
 import { formatDate } from '@/lib/format';
 import { countTasks } from '@/lib/editor/prosemirror-utils';
 import { dcount, dlog, drender } from '@/lib/debug';
-import type { FolderDTO, NoteDTO, TagDTO } from '@/lib/types';
+import type { FolderDTO, NoteDTO, PMDoc, TagDTO } from '@/lib/types';
 
 import { ActionSheet } from './ActionSheet';
 import { BacklinksPanel } from './BacklinksPanel';
@@ -373,8 +373,29 @@ function EditorImpl({
     );
   }
 
+  // Private Notes (v1.5): the body is AES-GCM ciphertext that the server
+  // cannot read. The full unlock flow ships in a follow-up PR; for now,
+  // render a placeholder rather than attempting to feed the ciphertext
+  // string into the editor / countTasks. No private note can exist yet
+  // because no UI creates one — this is a forward-compat guard.
+  if (note.encryption !== null) {
+    return (
+      <div className={styles.root}>
+        <div className={styles.emptyState}>
+          <div className={styles.emptyTitle}>🔒 Private note</div>
+          <div style={{ fontSize: 13 }}>
+            This note is encrypted. Unlock support is coming in a follow-up release.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const tagObjs = note.tagIds.map((id) => tags.find((t) => t.id === id)).filter(Boolean) as TagDTO[];
-  const { total: taskTotal, done: taskDone } = countTasks(note.content);
+  // Safe cast: the `note.encryption !== null` branch above ensures `content`
+  // is a PMDoc for the rest of this function.
+  const noteContent = note.content as PMDoc;
+  const { total: taskTotal, done: taskDone } = countTasks(noteContent);
   const isActive = (name: string, attrs?: Record<string, unknown>) =>
     editor?.isActive(name, attrs) ?? false;
 

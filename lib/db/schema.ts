@@ -111,6 +111,13 @@ export const notes = pgTable(
     // edit so the worker can find notes that need (re-)embedding.
     contentEmbedding: vector('content_embedding'),
     embeddingStale: boolean('embedding_stale').notNull().default(true),
+    // Private-Notes envelope. When non-null, `content` holds a base64 AES-GCM
+    // ciphertext string (encrypted client-side) instead of ProseMirror JSON,
+    // and `contentText` / `snippet` / `hasImage` / `contentEmbedding` are
+    // forced empty server-side. The shape is `{ v: 1, iv: <base64-12-bytes> }`
+    // — the wrapped Note Master Key lives in `user_encryption`. See
+    // docs/technical/private-notes.md.
+    encryption: jsonb('encryption'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -278,6 +285,28 @@ export const passwordResetTokens = pgTable(
   }),
 );
 
+// Per-user encryption material for the Private Notes feature. Lazy-created
+// the first time a user enables Private Notes from Settings → Privacy. The
+// server stores two AES-GCM-wrapped copies of the user's Note Master Key:
+// one wrapped with a passphrase-derived KEK, one wrapped with a recovery-code-
+// derived KEK. The server has neither secret — it can store and serve the
+// wraps but not unwrap them. See docs/technical/private-notes.md.
+//
+// The wrap blobs are JSON of the form
+//   { v, kdf: "PBKDF2-SHA256", iters, salt, iv, ct }
+// where every byte field is base64-encoded.
+export const userEncryption = pgTable('user_encryption', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  // Reserved for future format upgrades. Today only `1` is valid.
+  version: integer('version').notNull().default(1),
+  passphraseWrap: jsonb('passphrase_wrap').notNull(),
+  recoveryWrap: jsonb('recovery_wrap').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Outbound webhooks. One row = one delivery target owned by one user.
 // The `events` text[] holds the event names this webhook subscribes to
 // (e.g. ['note.created', 'note.tagged']). The secret is shown once at
@@ -321,3 +350,4 @@ export type Webhook = InferSelectModel<typeof webhooks>;
 export type PasswordResetToken = InferSelectModel<typeof passwordResetTokens>;
 export type EmailConfirmation = InferSelectModel<typeof emailConfirmations>;
 export type UserEmailPreferences = InferSelectModel<typeof userEmailPreferences>;
+export type UserEncryption = InferSelectModel<typeof userEncryption>;

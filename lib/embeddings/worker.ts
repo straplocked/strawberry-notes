@@ -79,10 +79,13 @@ export async function runOnce(
     // Lock a batch of stale, non-trashed rows. Using `FOR UPDATE SKIP LOCKED`
     // means two replicas running in parallel don't collide, and a crashed
     // worker releases its rows on connection close.
+    // `encryption IS NULL` is belt-and-suspenders: the service layer never
+    // sets `embedding_stale = true` on a private write, so this filter only
+    // matters if a row's privacy state was somehow toggled out of band.
     const rows = await db.execute(sql`
       SELECT id, title, content_text
       FROM notes
-      WHERE embedding_stale = true AND trashed_at IS NULL
+      WHERE embedding_stale = true AND trashed_at IS NULL AND encryption IS NULL
       ORDER BY updated_at DESC
       LIMIT ${batch}
       FOR UPDATE SKIP LOCKED

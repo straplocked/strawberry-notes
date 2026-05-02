@@ -64,6 +64,7 @@ async function produceArchive(
       trashedAt: notes.trashedAt,
       createdAt: notes.createdAt,
       updatedAt: notes.updatedAt,
+      encryption: notes.encryption,
     })
     .from(notes)
     .where(
@@ -105,7 +106,11 @@ async function produceArchive(
     const titleSlug = safeComponent(n.title || 'untitled', { fallback: 'untitled' });
     const shortId = n.id.slice(0, 8);
     const base = `notes/${folder}/${titleSlug}-${shortId}`;
-    const path = uniquePath(taken, base, '.md');
+    // Private notes get a distinct extension so unzippers + future importers
+    // can route them through the JSON-envelope path without sniffing content.
+    const isPrivate = n.encryption !== null;
+    const ext = isPrivate ? '.encrypted.json' : '.md';
+    const path = uniquePath(taken, base, ext);
 
     const tagNames = tagsByNote.get(n.id) ?? [];
     noteEntries.push({ note: n, path, tagNames });
@@ -121,6 +126,7 @@ async function produceArchive(
       createdAt: n.createdAt.toISOString(),
       updatedAt: n.updatedAt.toISOString(),
       trashedAt: n.trashedAt ? n.trashedAt.toISOString() : null,
+      ...(isPrivate ? { encrypted: true as const } : {}),
     });
   }
 
@@ -175,10 +181,28 @@ async function produceArchive(
   const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest, null, 2) + '\n');
   await writer.addFile('manifest.json', manifestBytes);
 
-  // --- 6. Stream each note's markdown --------------------------------------
+  // When the archive contains any Private Notes, drop a top-level README so
+  // anyone unzipping it understands the .encrypted.json files cannot be read
+  // with the export alone — the user's passphrase or recovery code is needed.
+  if (manifest.encryption !== undefined) {
+    const readme =
+      'This archive contains Private Notes — files ending in `.encrypted.json`.\n' +
+      '\n' +
+      'They are AES-256-GCM ciphertext of the original ProseMirror document and\n' +
+      'cannot be read without the user\'s passphrase or recovery code. The\n' +
+      'archive carries no decryption material; the user holds the only keys.\n' +
+      '\n' +
+      'Format documentation: docs/technical/private-notes.md in the\n' +
+      'Strawberry Notes repository.\n';
+    await writer.addFile('README.txt', new TextEncoder().encode(readme));
+  }
+
+  // --- 6. Stream each note's content ---------------------------------------
   for (const e of noteEntries) {
-    const md = renderNoteMarkdown(e.note, e.tagNames);
-    const bytes = new TextEncoder().encode(md);
+    const isPrivate = e.note.encryption !== null;
+    const bytes = isPrivate
+      ? new TextEncoder().encode(renderEncryptedNoteJson(e.note))
+      : new TextEncoder().encode(renderNoteMarkdown(e.note, e.tagNames));
     await writer.addFile(e.path, bytes, { mtime: e.note.updatedAt });
   }
 
@@ -253,6 +277,39 @@ function renderNoteMarkdown(
   });
   const body = docToMarkdown(n.content as PMDoc);
   return `${front}# ${n.title || 'Untitled'}\n\n${body}`;
+}
+
+/**
+ * Serialise a Private Note as the `sn-private-note-v1` JSON envelope. The
+ * `content` column for a private note holds the base64 ciphertext as a JSON
+ * string literal (see `lib/notes/service.ts`); we emit it alongside the IV
+ * and the user-visible plaintext metadata. Title, folderId, timestamps stay
+ * plaintext — they were never encrypted server-side either.
+ */
+function renderEncryptedNoteJson(n: {
+  id: string;
+  title: string;
+  content: unknown;
+  folderId: string | null;
+  pinned: boolean;
+  trashedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  encryption: unknown;
+}): string {
+  const envelope = {
+    format: 'sn-private-note-v1',
+    id: n.id,
+    title: n.title,
+    folderId: n.folderId,
+    pinned: n.pinned,
+    encryption: n.encryption,
+    ciphertext: n.content as string,
+    createdAt: n.createdAt.toISOString(),
+    updatedAt: n.updatedAt.toISOString(),
+    trashedAt: n.trashedAt ? n.trashedAt.toISOString() : null,
+  };
+  return JSON.stringify(envelope, null, 2) + '\n';
 }
 
 function stripExt(name: string): string {
