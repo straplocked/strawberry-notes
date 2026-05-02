@@ -704,15 +704,17 @@ function SidebarImpl(props: SidebarProps) {
 
   return (
     <aside style={rootStyle}>
-      <div style={styles.brand}>
-        <div style={styles.brandMark}>
-          <IconBerry size={30} />
+      {!fullWidth && (
+        <div style={styles.brand}>
+          <div style={styles.brandMark}>
+            <IconBerry size={30} />
+          </div>
+          <div>
+            <div style={styles.brandName}>Strawberry</div>
+            <div style={styles.brandSub}>Notes</div>
+          </div>
         </div>
-        <div>
-          <div style={styles.brandName}>Strawberry</div>
-          <div style={styles.brandSub}>Notes</div>
-        </div>
-      </div>
+      )}
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <div style={styles.section}>
@@ -850,33 +852,35 @@ function SidebarImpl(props: SidebarProps) {
         </div>
       </div>
 
-      <div style={styles.footer}>
-        <button style={styles.newBtn} onClick={props.onNew} type="button">
-          <IconPlus size={13} />
-          New note
-        </button>
-        <button
-          style={styles.footBtn}
-          onClick={props.onToggleTheme}
-          title="Toggle theme"
-          type="button"
-        >
-          {props.theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
-        </button>
-        <Link href="/settings" title="Settings" style={styles.footBtn}>
-          <IconCog size={15} />
-        </Link>
-        {props.onSignOut && (
+      {!fullWidth && (
+        <div style={styles.footer}>
+          <button style={styles.newBtn} onClick={props.onNew} type="button">
+            <IconPlus size={13} />
+            New note
+          </button>
           <button
             style={styles.footBtn}
-            onClick={props.onSignOut}
-            title="Sign out"
+            onClick={props.onToggleTheme}
+            title="Toggle theme"
             type="button"
           >
-            <IconLogout size={15} />
+            {props.theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
           </button>
-        )}
-      </div>
+          <Link href="/settings" title="Settings" style={styles.footBtn}>
+            <IconCog size={15} />
+          </Link>
+          {props.onSignOut && (
+            <button
+              style={styles.footBtn}
+              onClick={props.onSignOut}
+              title="Sign out"
+              type="button"
+            >
+              <IconLogout size={15} />
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
