@@ -537,7 +537,7 @@ export function AppShell() {
   return (
     <>
       {content}
-      <TweaksPanel />
+      {!isMobile && <TweaksPanel />}
       <ConfirmDialog
         open={confirmState?.kind === 'folder'}
         title="Delete folder?"
