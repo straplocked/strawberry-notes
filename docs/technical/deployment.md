@@ -95,8 +95,74 @@ Optional (with defaults):
 | `SMTP_PASS`          | *(unset)*                  | Optional SMTP auth password.                  |
 | `SMTP_FROM`          | *(unset)*                  | `From:` address used on outbound mail. Required when `SMTP_HOST` is set. |
 | `SMTP_SECURE`        | `false`                    | `true` forces implicit TLS at connect time.   |
+| `PASSWORD_AUTH`      | `true`                     | Set to `false` to disable email/password sign-in (use OIDC-only or proxy-only deployments). |
+| `TOTP_ENABLED`       | `false`                    | Enable per-user TOTP/2FA enrollment from Settings → Security. |
+| `OIDC_ENABLED`       | `false`                    | Mount the OIDC provider (also requires the three `OIDC_*` creds below). |
+| `OIDC_ISSUER`        | *(unset)*                  | OIDC issuer URL (e.g. `https://auth.example.com/application/o/strawberry/`). |
+| `OIDC_CLIENT_ID`     | *(unset)*                  | OIDC client id. |
+| `OIDC_CLIENT_SECRET` | *(unset)*                  | OIDC client secret. **Do not commit.** |
+| `OIDC_NAME`          | `SSO`                      | Button label on the login page. |
+| `OIDC_AUTO_PROVISION`| `false`                    | JIT-create local users on first OIDC sign-in (requires IdP `email_verified=true`). |
+| `OIDC_TRUST_EMAIL_FOR_LINKING` | `false`          | Auto-link OIDC sign-ins to existing email-matching local users. **Account-takeover risk** if the IdP allows admin-set arbitrary emails — see [auth.md](auth.md#oidc-account-takeover-threat-model). |
+| `PROXY_AUTH`         | `false`                    | Bypass first-party auth — trust a forward-auth header. Hides `/login`. |
+| `PROXY_AUTH_USER_HEADER` | `x-authentik-username` | Header carrying the username injected by the proxy. |
+| `PROXY_AUTH_EMAIL_HEADER` | `x-authentik-email`   | Optional companion email header. |
+| `PROXY_AUTH_SHARED_SECRET` | *(unset)*            | Required when `PROXY_AUTH=on`. Proxy must forward `X-Forward-Auth-Secret: <secret>`; mismatch → 401. |
+| `PROXY_AUTH_LOGOUT_URL` | *(unset)*               | Where the sign-out button points in proxy mode. Unset → button hidden. |
 
 `.env.example` at the repo root documents the full set — copy it to `.env` before first boot.
+
+### Auth modes (optional)
+
+Default behaviour with no auth-related env vars set is identical to v1: email + password, single Credentials provider. Composable flags layer additional modes on top. See [auth.md](auth.md) for the full architecture.
+
+#### Add 2FA / TOTP
+
+```env
+TOTP_ENABLED=true
+```
+
+Per-user opt-in. Each user enrolls themselves from **Settings → Security**, scans a QR code into any TOTP authenticator, saves 8 recovery codes, and confirms with a live code. Admins can clear an enrollment from `/admin/users → Reset 2FA` for users who lose their authenticator + recovery codes.
+
+#### Add OIDC SSO (Authentik / Authelia / Keycloak / Auth0)
+
+```env
+OIDC_ENABLED=true
+OIDC_ISSUER=https://auth.example.com/application/o/strawberry/
+OIDC_CLIENT_ID=...
+OIDC_CLIENT_SECRET=...
+OIDC_NAME=Authentik
+# optional, for greenfield onboarding:
+OIDC_AUTO_PROVISION=true
+```
+
+Configure the redirect URI on the IdP side as `${AUTH_URL}/api/auth/callback/oidc`. The login page renders a "Sign in with {OIDC_NAME}" button alongside the password form.
+
+Default linking policy is **strict**: an OIDC sign-in whose email matches an existing local user is refused. Either set `OIDC_TRUST_EMAIL_FOR_LINKING=true` (only when you trust the IdP's email-verification entirely) or rely on `OIDC_AUTO_PROVISION=true`.
+
+#### Run behind Authentik forward-auth (proxy mode)
+
+```env
+PROXY_AUTH=true
+PROXY_AUTH_SHARED_SECRET=<long random string>
+PROXY_AUTH_USER_HEADER=x-authentik-username
+PROXY_AUTH_EMAIL_HEADER=x-authentik-email
+PROXY_AUTH_LOGOUT_URL=/outpost.goauthentik.io/sign_out
+```
+
+In Authentik:
+
+1. Create a **Proxy Provider** (forward-auth, single application) for Strawberry.
+2. Ensure `X-Authentik-Username` and `X-Authentik-Email` are forwarded to the upstream.
+3. Have the proxy inject a custom header `X-Forward-Auth-Secret: <secret>` matching `PROXY_AUTH_SHARED_SECRET`. Without this header, every Strawberry request returns 401 — it is the only mechanism that distinguishes "request came from the proxy" from "client supplied the username header directly".
+4. Outpost the application onto your Caddy / Traefik / nginx per the [Authentik forward-auth docs](https://goauthentik.io/docs/providers/proxy/server_nginx).
+
+When `PROXY_AUTH=on`:
+
+- `/login` redirects to `/notes` (the proxy already authed the user).
+- The JWT cookie is **ignored** — every request is gated by the header check.
+- Unknown usernames are JIT-provisioned (`passwordHash=null`, pre-confirmed). The first such user is auto-promoted to admin (same bootstrap rule as v1).
+- Personal Access Tokens (`/api/mcp`) are unaffected — bearer auth is independent.
 
 ### Semantic search (optional)
 
