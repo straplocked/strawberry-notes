@@ -344,10 +344,31 @@ export function usePatchNote() {
 
       // 1) Patch the single-note cache.
       if (prevNote) {
+        // Distinguish "encryption field omitted" (no change) from "explicitly
+        // null" (private→plaintext transition). The PATCH zod schema in the
+        // route relies on the same distinction.
+        const encryptionTransition = patch.encryption !== undefined;
+        const nextEncryption = encryptionTransition
+          ? patch.encryption ?? null
+          : prevNote.encryption;
         const nextNote: NoteDTO = {
           ...prevNote,
           title: patch.title ?? prevNote.title,
-          content: (patch.content as PMDoc | undefined) ?? prevNote.content,
+          // For a plaintext→private transition the optimistic content is the
+          // ciphertext we just shipped. For a private→plaintext transition
+          // it's the PMDoc the caller passed. Otherwise unchanged.
+          content: encryptionTransition
+            ? patch.encryption !== null
+              ? (patch.ciphertext as unknown as PMDoc) ?? prevNote.content
+              : (patch.content as PMDoc | undefined) ?? prevNote.content
+            : (patch.content as PMDoc | undefined) ?? prevNote.content,
+          // Server zeroes contentText on a private write; mirror so the editor
+          // path doesn't briefly flash stale plaintext mirror text.
+          contentText:
+            encryptionTransition && patch.encryption !== null
+              ? ''
+              : prevNote.contentText,
+          encryption: nextEncryption,
           folderId:
             patch.folderId !== undefined ? patch.folderId : prevNote.folderId,
           pinned: patch.pinned ?? prevNote.pinned,
@@ -363,6 +384,9 @@ export function usePatchNote() {
       }
 
       // 2) Patch every notes list. Mutate in place; may remove if trashed/untrashed.
+      const becomingPrivate =
+        patch.encryption !== undefined && patch.encryption !== null;
+      const becomingPlaintext = patch.encryption === null;
       patchAllLists(qc, (list, viewKey) => {
         const kind = viewKeyToKind(viewKey);
         let next = list.map((n) => {
@@ -373,6 +397,12 @@ export function usePatchNote() {
             pinned: patch.pinned ?? n.pinned,
             folderId:
               patch.folderId !== undefined ? patch.folderId : n.folderId,
+            // Lock toggle: flip the badge immediately so the second pane doesn't
+            // wait for the server round-trip to render the 🔒. Snippet is
+            // cleared on private writes (server zeroes it) so the
+            // "🔒 Private — unlock to read" placeholder takes over.
+            private: becomingPrivate ? true : becomingPlaintext ? false : n.private,
+            snippet: becomingPrivate ? '' : n.snippet,
             updatedAt: now,
           };
         });
@@ -489,10 +519,14 @@ export function usePatchNote() {
       // it never *adds* a note that newly qualifies (pin=true → Pinned view,
       // folder=X → notes:folder:X). Invalidate to let the server-side
       // WHERE clauses rebuild any list whose membership may have changed.
+      // Encryption flips also invalidate so the server-truth values
+      // (snippet='', contentText='', and the row's `private` flag from the
+      // partial-index path) replace the optimistic stand-ins.
       if (
         patch.pinned !== undefined ||
         patch.trashed !== undefined ||
-        patch.folderId !== undefined
+        patch.folderId !== undefined ||
+        patch.encryption !== undefined
       ) {
         qc.invalidateQueries({ queryKey: ['notes'] });
       }
