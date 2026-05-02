@@ -56,6 +56,16 @@ const styles: Record<string, CSSProperties> = {
   scroll: { flex: 1, overflowY: 'auto' },
   empty: { padding: '40px 20px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 12.5 },
   pinMark: { color: 'var(--berry)', display: 'inline-flex' },
+  lockMark: {
+    color: 'var(--ink-3)',
+    display: 'inline-flex',
+    fontSize: 11,
+    lineHeight: 1,
+  },
+  privateSnippet: {
+    fontStyle: 'italic',
+    color: 'var(--ink-4)',
+  },
   tag: {
     fontSize: 10,
     padding: '2px 7px 3px',
@@ -281,6 +291,11 @@ function NoteListImpl({
                         <IconPinFill size={11} />
                       </span>
                     )}
+                    {n.private && (
+                      <span style={styles.lockMark} title="Private note (encrypted)">
+                        🔒
+                      </span>
+                    )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {n.title || 'Untitled'}
                     </span>
@@ -296,7 +311,15 @@ function NoteListImpl({
                       </>
                     )}
                   </div>
-                  <div style={snippetStyle(dense)}>{n.snippet || 'No additional text'}</div>
+                  <div style={snippetStyle(dense)}>
+                    {n.private ? (
+                      <span style={styles.privateSnippet}>
+                        🔒 Private — unlock to read
+                      </span>
+                    ) : (
+                      n.snippet || 'No additional text'
+                    )}
+                  </div>
                   {!dense && n.tagIds.length > 0 && (
                     <div style={itemTagsStyle}>
                       {n.tagIds.map((tid) => {

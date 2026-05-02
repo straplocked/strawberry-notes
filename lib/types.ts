@@ -54,6 +54,33 @@ export interface NoteEncryption {
   iv: string;
 }
 
+/**
+ * Wrap-envelope JSON shape stored in `user_encryption.{passphrase,recovery}_wrap`.
+ * Mirrored in `lib/crypto/private-notes.ts` (canonical type) — duplicated here
+ * so client code can import the type without pulling the WebCrypto module.
+ */
+export interface PrivateNotesWrapBlob {
+  v: number;
+  kdf: 'PBKDF2-SHA256';
+  iters: number;
+  salt: string;
+  iv: string;
+  ct: string;
+}
+
+export interface PrivateNotesMaterial {
+  version: number;
+  passphraseWrap: PrivateNotesWrapBlob;
+  recoveryWrap: PrivateNotesWrapBlob;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PrivateNotesStatus {
+  configured: boolean;
+  privateCount: number;
+}
+
 export interface NoteDTO {
   id: string;
   folderId: string | null;

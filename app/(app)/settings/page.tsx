@@ -3,9 +3,11 @@ import Link from 'next/link';
 import { AppearanceSection } from '@/components/app/settings/AppearanceSection';
 import { EmailPreferencesSection } from '@/components/app/settings/EmailPreferencesSection';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
+import { PrivateNotesSection } from '@/components/app/settings/PrivateNotesSection';
 import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
 import { WebhooksSection } from '@/components/app/settings/WebhooksSection';
+import { PRIVATE_NOTES_ENABLED } from '@/lib/private-notes/feature-flag';
 
 export const metadata: Metadata = { title: 'Settings — Strawberry Notes' };
 
@@ -46,6 +48,7 @@ export default function SettingsPage() {
         </h1>
       </header>
       <AppearanceSection />
+      {PRIVATE_NOTES_ENABLED && <PrivateNotesSection />}
       <TagsSection />
       <TokensSection />
       <WebhooksSection />

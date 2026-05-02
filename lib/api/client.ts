@@ -4,8 +4,12 @@ import type {
   FolderDTO,
   NoteCountsDTO,
   NoteDTO,
+  NoteEncryption,
   NoteListItemDTO,
   PMDoc,
+  PrivateNotesMaterial,
+  PrivateNotesStatus,
+  PrivateNotesWrapBlob,
   TagDTO,
 } from '../types';
 
@@ -104,6 +108,15 @@ export const api = {
         pinned?: boolean;
         tagNames?: string[];
         trashed?: boolean;
+        /**
+         * Private Notes transition control:
+         *   - `undefined`  → no change to privacy state
+         *   - `NoteEncryption` → transition to / re-save private; `ciphertext` is required
+         *   - `null`       → explicit private→plaintext; `content` (a real PMDoc) is required
+         */
+        encryption?: NoteEncryption | null;
+        /** Required when `encryption` is a non-null object. Base64 AES-GCM ciphertext+tag. */
+        ciphertext?: string;
       },
     ) =>
       req<NoteDTO>('PATCH', `/api/notes/${id}`, {
@@ -114,5 +127,42 @@ export const api = {
       req<{ ok: true }>('DELETE', `/api/notes/${id}`),
     exportMarkdown: (id: string) => (window.location.href = `/api/notes/${id}/export.md`),
     backlinks: (id: string) => req<BacklinkDTO[]>('GET', `/api/notes/${id}/backlinks`),
+  },
+  privateNotes: {
+    /** Lightweight status for the Settings banner. Always succeeds for a signed-in user. */
+    status: () => req<PrivateNotesStatus>('GET', '/api/private-notes'),
+    /**
+     * Returns the wrap envelopes + KDF parameters needed to derive the
+     * unwrapping KEK in the browser. Throws on 404 when the user has not
+     * configured Private Notes yet.
+     */
+    getWrap: () => req<PrivateNotesMaterial>('GET', '/api/private-notes/wrap'),
+    /** First-time setup. Server stores both wraps. 409 on second call. */
+    setup: (input: {
+      passphraseWrap: PrivateNotesWrapBlob;
+      recoveryWrap: PrivateNotesWrapBlob;
+    }) =>
+      req<PrivateNotesMaterial>('POST', '/api/private-notes/setup', {
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      }),
+    /** Replace the passphrase wrap (after the user typed in a new passphrase). */
+    changePassphrase: (input: { passphraseWrap: PrivateNotesWrapBlob }) =>
+      req<{ ok: true }>('PATCH', '/api/private-notes/passphrase', {
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      }),
+    /** Replace the recovery-code wrap (after the client generated a new code). */
+    regenerateRecovery: (input: { recoveryWrap: PrivateNotesWrapBlob }) =>
+      req<{ ok: true }>('POST', '/api/private-notes/recovery', {
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      }),
+    /**
+     * Disable the feature. Server refuses with 409 when any private note still
+     * exists — the caller is expected to surface the count + ask the user to
+     * migrate them back to plaintext first.
+     */
+    disable: () => req<{ ok: true }>('DELETE', '/api/private-notes'),
   },
 };

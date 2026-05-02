@@ -152,6 +152,34 @@ export interface EditorProps {
   editorRef?: MutableRefObject<TiptapEditor | null>;
   readOnly?: boolean;
   loading?: boolean;
+
+  /* ---------------- Private Notes (v1.5) ---------------- */
+  /**
+   * Whether the Private Notes feature surface should render at all (toolbar
+   * button + locked overlay action). Driven by `NEXT_PUBLIC_PRIVATE_NOTES`
+   * via the parent so this component stays SSR-safe.
+   */
+  privateNotesEnabled?: boolean;
+  /**
+   * The plaintext PMDoc for a private note that has been decrypted by the
+   * parent. Required when `note.encryption !== null` and the user is
+   * unlocked; absent (or null) renders the locked overlay.
+   */
+  decryptedContent?: PMDoc | null;
+  /**
+   * Coarse store status — drives whether the locked overlay shows an
+   * "Unlock" CTA or an "Unavailable" message (for the unconfigured case
+   * which shouldn't normally happen).
+   */
+  privateNotesStatus?: 'unconfigured' | 'locked' | 'unlocked';
+  /** Open the unlock modal. Called from the locked overlay's CTA. */
+  onRequestUnlock?: () => void;
+  /**
+   * Toggle the active note's privacy. Plaintext → private opens a confirm,
+   * encrypts, and saves. Private → plaintext requires the user to be
+   * unlocked. Parent owns the flow.
+   */
+  onToggleLock?: () => void;
 }
 
 function EditorImpl({
@@ -169,6 +197,11 @@ function EditorImpl({
   editorRef,
   readOnly = false,
   loading = false,
+  privateNotesEnabled = false,
+  decryptedContent = null,
+  privateNotesStatus = 'unconfigured',
+  onRequestUnlock,
+  onToggleLock,
 }: EditorProps) {
   drender('Editor', { noteId: note?.id, readOnly });
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
@@ -234,7 +267,19 @@ function EditorImpl({
           onLinkClick: handleWikiLinkClick,
         }),
       ],
-      content: (note?.content ?? { type: 'doc', content: [{ type: 'paragraph' }] }) as JSONContent,
+      // For a plaintext note, `note.content` is a PMDoc. For a private note
+      // it's a base64 ciphertext string — the parent decrypts asynchronously
+      // and feeds the result back via `decryptedContent`. Both branches
+      // collapse to the same JSONContent shape here.
+      content: (() => {
+        if (note?.encryption) {
+          return (decryptedContent ?? {
+            type: 'doc',
+            content: [{ type: 'paragraph' }],
+          }) as JSONContent;
+        }
+        return (note?.content ?? { type: 'doc', content: [{ type: 'paragraph' }] }) as JSONContent;
+      })(),
       editable: !readOnly,
       editorProps: {
         attributes: { class: styles.pm, 'data-testid': 'pm-editor' },
@@ -308,7 +353,10 @@ function EditorImpl({
       },
       immediatelyRender: false,
     },
-    [note?.id],
+    // Rebuild on note switch (existing behaviour) AND on the one-shot
+    // private→decrypted transition. Both are safe: the editor was either
+    // empty (just mounted) or showed the locked overlay (no unsaved edits).
+    [note?.id, note?.encryption ? !!decryptedContent : true],
   );
 
   // Tracks whether useEditor has rebuilt the instance (note?.id changed).
@@ -373,29 +421,57 @@ function EditorImpl({
     );
   }
 
-  // Private Notes (v1.5): the body is AES-GCM ciphertext that the server
-  // cannot read. The full unlock flow ships in a follow-up PR; for now,
-  // render a placeholder rather than attempting to feed the ciphertext
-  // string into the editor / countTasks. No private note can exist yet
-  // because no UI creates one — this is a forward-compat guard.
-  if (note.encryption !== null) {
+  // Private Notes (v1.5): the body is AES-GCM ciphertext. When the user is
+  // locked (or the feature isn't configured at all), render a placeholder
+  // with an Unlock CTA — feeding ciphertext to TipTap / countTasks would
+  // crash. The decrypted PMDoc arrives via `decryptedContent` once the
+  // parent has unwrapped it.
+  if (note.encryption !== null && !decryptedContent) {
+    const canUnlock =
+      privateNotesEnabled && privateNotesStatus === 'locked' && !!onRequestUnlock;
     return (
       <div className={styles.root}>
         <div className={styles.emptyState}>
           <div className={styles.emptyTitle}>🔒 Private note</div>
-          <div style={{ fontSize: 13 }}>
-            This note is encrypted. Unlock support is coming in a follow-up release.
+          <div style={{ fontSize: 13, marginBottom: 16 }}>
+            {privateNotesStatus === 'unconfigured'
+              ? 'Private Notes is not configured on this device. Open Settings → Private Notes to set it up.'
+              : 'Encrypted with your passphrase. Unlock to read.'}
           </div>
+          {canUnlock && (
+            <button
+              type="button"
+              onClick={onRequestUnlock}
+              style={{
+                background: 'var(--accent)',
+                color: 'var(--accent-ink)',
+                border: 0,
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Unlock
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
   const tagObjs = note.tagIds.map((id) => tags.find((t) => t.id === id)).filter(Boolean) as TagDTO[];
-  // Safe cast: the `note.encryption !== null` branch above ensures `content`
-  // is a PMDoc for the rest of this function.
-  const noteContent = note.content as PMDoc;
+  // Pick the actual PMDoc to render: decrypted body for private notes, the
+  // raw `note.content` for plaintext. Safe — the `if` above ensures one or
+  // the other is always present.
+  const noteContent: PMDoc =
+    note.encryption !== null
+      ? (decryptedContent as PMDoc)
+      : (note.content as PMDoc);
   const { total: taskTotal, done: taskDone } = countTasks(noteContent);
+  const isPrivate = note.encryption !== null;
+  const showLockToggle = privateNotesEnabled && !!onToggleLock;
   const isActive = (name: string, attrs?: Record<string, unknown>) =>
     editor?.isActive(name, attrs) ?? false;
 
@@ -550,6 +626,20 @@ function EditorImpl({
               >
                 {note.pinned ? <IconPinFill size={14} /> : <IconPin size={14} />}
               </button>
+              {showLockToggle && (
+                <button
+                  style={tbtnStyle(isPrivate)}
+                  title={
+                    isPrivate
+                      ? 'Make this note plaintext (visible to MCP + clipper)'
+                      : 'Make this note private (encrypted, hidden from MCP + clipper)'
+                  }
+                  type="button"
+                  onClick={onToggleLock}
+                >
+                  <span style={{ fontSize: 13, lineHeight: 1 }}>{isPrivate ? '🔓' : '🔒'}</span>
+                </button>
+              )}
               <button style={tbtnStyle()} title="Share" type="button">
                 <IconShare size={15} />
               </button>
