@@ -18,7 +18,9 @@ Single **Credentials** provider. `authorize()`:
 1. Looks up the user by lowercased email.
 2. If no row, returns `null` → Auth.js responds `401`.
 3. `bcryptjs.compare(password, user.passwordHash)`; mismatch → `null`.
-4. Returns `{ id, email }`.
+4. If `users.disabled_at IS NOT NULL`, returns `null` (same generic shape as bad creds — disabled state is not leaked).
+5. If no admin exists in `users`, the row gets auto-promoted to `role = 'admin'` (idempotent NOT EXISTS query). Covers fresh-install bootstrapping when the migration's `UPDATE` had no rows to act on.
+6. Returns `{ id, email, role }`.
 
 There is no OAuth provider, no magic-link provider, no SAML, no SSO. This is a deliberate v1 choice — see [leadership/roadmap.md](../leadership/roadmap.md).
 
@@ -30,13 +32,14 @@ There is no OAuth provider, no magic-link provider, no SAML, no SSO. This is a d
 
 Callbacks in `lib/auth.ts`:
 
-- `jwt({ token, user })` — on sign-in, copies `user.id` into the token.
-- `session({ session, token })` — copies `token.id` onto `session.user.id`.
+- `jwt({ token, user })` — on sign-in, copies `user.id` and `user.role` into the token.
+- `session({ session, token })` — copies `token.id` and `token.role` onto `session.user`.
 - `authorized({ auth, request })` — declarative route gating:
+  - `/admin` and its children require `auth` AND `role === 'admin'`.
   - `/notes` and its children require `auth`.
   - Public paths (`/login`, `/signup`, `/api/auth/*`, static assets) always pass.
 
-TypeScript module augmentation in the same file adds `id: string` to `Session['user']` and to the JWT, so call sites see it natively.
+TypeScript module augmentation in the same file adds `id: string` and `role: 'user' | 'admin'` to `Session['user']` and to the JWT, so call sites see them natively.
 
 ---
 
@@ -86,6 +89,52 @@ The two-step (signup → signin) shape exists because Auth.js v5 credentials flo
 
 ---
 
+## Roles & Admin UI
+
+Two roles: `user` (default) and `admin`. The role lives on `users.role` (text, NOT NULL, default `'user'`, CHECK constraint enforces the two values).
+
+**Bootstrap rule.** Migration `0011` runs:
+
+```sql
+UPDATE users SET role = 'admin'
+WHERE id = (SELECT id FROM users ORDER BY created_at ASC LIMIT 1);
+```
+
+so an existing instance promotes its first user to admin without operator action. Fresh installs hit the second guarantee in `lib/auth.ts`'s `authorize()` instead — the first sign-in that finds no admin in the table is auto-promoted (idempotent NOT EXISTS query). Either way, the operator's first account is the bootstrap admin.
+
+**Disabled accounts.** `users.disabled_at` is a nullable timestamp set/cleared by an admin from `/admin/users`. Sign-in is rejected when it's set; existing JWT sessions continue until they expire — there is no live revocation in v1 (out-of-bounds for a self-hosted single-instance app; a fresh JWT after expiry is the next gate).
+
+### Admin UI (`/admin/users`)
+
+Server page at `app/(app)/admin/users/page.tsx` — calls `auth()`, falls back to `notFound()` for non-admins (404 over 403; we don't advertise the route's existence).
+
+Client table renders: email, role, status (`active` / `disabled` / `unconfirmed`), created. Per-row actions:
+
+- **Reset password** → `POST /api/admin/users/:id/reset-password` returns a freshly-generated password (one-time view in a copy-to-clipboard modal). Triggers `notifyPasswordChanged` so the user gets the standard "your password was changed" email if they have notifications on and SMTP is configured.
+- **Promote / Demote** → `PATCH /api/admin/users/:id` with `{ role }`.
+- **Disable / Enable** → `PATCH /api/admin/users/:id` with `{ disabled }`.
+- **Delete** → `DELETE /api/admin/users/:id` (cascades through existing FKs).
+
+Self-actions (the acting admin disabling, demoting, or deleting themselves) are blocked in both the UI and the API. The "last admin" guard is also enforced server-side: `setUserRole`, `setUserDisabled`, and `deleteUser` in `lib/auth/user-admin.ts` consult `countAdmins()` before applying any change that would leave zero admins. Errors map to HTTP statuses through `errorResponse()`: `not_found→404`, `email_taken / last_admin → 409`, `self_action → 403`, default → 400.
+
+### Sidebar / mobile menu link
+
+The sidebar footer renders the admin link only when `session.user.role === 'admin'` (passed down from `AppShell` via `useSession()`). The mobile gear-menu sheet shows an "Admin · users" row with the same gating. Regular users see neither, and `/admin/users` 404s for them.
+
+### CLI
+
+```bash
+# Provision / reset / role management — operator-only, never via the web UI.
+docker compose exec app npm run user:create  -- alice@example.com [password]
+docker compose exec app npm run user:reset   -- alice@example.com [password]
+docker compose exec app npm run user:promote -- alice@example.com
+docker compose exec app npm run user:demote  -- alice@example.com
+```
+
+Promote / demote share `setUserRole` with the API, so the same "last admin" guard prevents demoting yourself into a zero-admin state from the shell. They emit a one-line confirmation (`[promote-user] alice@example.com is now an admin.`) and exit non-zero on `UserAdminError` so a wrapper script can branch on it.
+
+---
+
 ## Rate Limiting
 
 Auth-adjacent endpoints are protected by a per-process in-memory token-bucket limiter (`lib/http/rate-limit.ts`):
@@ -100,6 +149,7 @@ Auth-adjacent endpoints are protected by a per-process in-memory token-bucket li
 | `POST /api/auth/resend-confirmation`    | 3 per IP per hour, capacity 3                |
 | `POST /api/tokens` (issue access token) | 20 per signed-in user per hour, capacity 20  |
 | `POST /api/webhooks` (mint webhook)     | 20 per signed-in user per hour, capacity 20  |
+| `POST /api/admin/users` (create user)   | 60 per acting admin per hour, capacity 60    |
 
 Limits are per-process, not global. Operators running multiple replicas should add an upstream limiter at the reverse proxy — this layer is defense-in-depth, not a substitute. The limiter keys on `X-Forwarded-For` first hop, then `X-Real-IP`, then a constant fallback; pass these headers through your proxy.
 

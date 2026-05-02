@@ -19,6 +19,8 @@
     "db:embed": "tsx scripts/embed-backfill.ts",
     "user:create": "tsx scripts/create-user.ts",
     "user:reset": "tsx scripts/reset-password.ts",
+    "user:promote": "tsx scripts/promote-user.ts",
+    "user:demote": "tsx scripts/demote-user.ts",
     "email:preview": "tsx scripts/preview-emails.ts"
   },
   "dependencies": {

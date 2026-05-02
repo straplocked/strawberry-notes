@@ -16,6 +16,7 @@ import {
   IconPlus,
   IconSun,
   IconTrash,
+  IconUsers,
 } from '@/components/icons';
 import { ACCENTS, type Density } from '@/lib/design/accents';
 import { drender } from '@/lib/debug';
@@ -273,6 +274,8 @@ export interface SidebarProps {
   onMoveNoteToFolder?: (noteId: string, folderId: string | null) => void;
   fullWidth?: boolean;
   alwaysShowFolderActions?: boolean;
+  /** Show the /admin/users link in the footer when true. */
+  isAdmin?: boolean;
 }
 
 interface FolderTreeNode {
@@ -869,6 +872,11 @@ function SidebarImpl(props: SidebarProps) {
           <Link href="/settings" title="Settings" style={styles.footBtn}>
             <IconCog size={15} />
           </Link>
+          {props.isAdmin && (
+            <Link href="/admin/users" title="Admin · users" style={styles.footBtn}>
+              <IconUsers size={15} />
+            </Link>
+          )}
           {props.onSignOut && (
             <button
               style={styles.footBtn}
