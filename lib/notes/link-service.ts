@@ -130,8 +130,46 @@ export async function unresolveLinksTo(userId: string, noteId: string): Promise<
     );
 }
 
+export interface ListBacklinksOptions {
+  /**
+   * Defaults to `true`. When `false` (bearer callers via MCP / web clipper),
+   * refuse to return backlinks of a private target — returning them would
+   * confirm the existence of a private note at the supplied id, which is
+   * something we hide from bearer callers everywhere else (`getNote`,
+   * `listNotes`). Plaintext sources are filtered as a separate guard since
+   * a private note can never *be* a backlink source (extraction is skipped),
+   * but defence-in-depth costs nothing here.
+   */
+  includePrivate?: boolean;
+}
+
 /** List notes that link to the given target, newest-updated first. */
-export async function listBacklinks(userId: string, noteId: string): Promise<BacklinkDTO[]> {
+export async function listBacklinks(
+  userId: string,
+  noteId: string,
+  opts: ListBacklinksOptions = {},
+): Promise<BacklinkDTO[]> {
+  const includePrivate = opts.includePrivate ?? true;
+
+  if (!includePrivate) {
+    // Cheap guard: refuse to surface backlinks when the target itself is
+    // private. Mirrors the `getNote(includePrivate: false)` 404 behaviour.
+    const [target] = await db
+      .select({ encryption: notes.encryption })
+      .from(notes)
+      .where(and(eq(notes.id, noteId), eq(notes.userId, userId)));
+    if (!target || target.encryption !== null) return [];
+  }
+
+  const conditions = [
+    eq(noteLinks.targetId, noteId),
+    eq(notes.userId, userId),
+    isNull(notes.trashedAt),
+  ];
+  if (!includePrivate) {
+    conditions.push(isNull(notes.encryption));
+  }
+
   const rows = await db
     .select({
       id: notes.id,
@@ -142,13 +180,7 @@ export async function listBacklinks(userId: string, noteId: string): Promise<Bac
     })
     .from(noteLinks)
     .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
-    .where(
-      and(
-        eq(noteLinks.targetId, noteId),
-        eq(notes.userId, userId),
-        isNull(notes.trashedAt),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(desc(notes.updatedAt))
     .limit(200);
 

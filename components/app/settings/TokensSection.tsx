@@ -171,7 +171,9 @@ export function TokensSection() {
       <h2 style={styles.h2}>Personal Access Tokens</h2>
       <p style={styles.help}>
         Tokens let programmatic clients (e.g. MCP-compatible AI assistants) act on your notes. A
-        token carries the same permissions as your account — treat it like a password.
+        token carries the same permissions as your account — treat it like a password.{' '}
+        <strong>Private Notes are never visible to tokens</strong> — agents and the web clipper
+        only see your plaintext notes.
       </p>
 
       <form onSubmit={onCreate} style={styles.form}>
