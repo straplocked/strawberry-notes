@@ -219,10 +219,16 @@ export async function wrapNMK(
  * and {@link UnsupportedVersionError} when the envelope is from a future
  * format version.
  *
- * The returned NMK is non-extractable — its byte material can never leave
- * WebCrypto for the lifetime of the session.
+ * `extractable` defaults to `false` — the returned key's byte material can
+ * never leave WebCrypto for the lifetime of the session. Pass `true` only
+ * in the rotation paths (change passphrase / regenerate recovery code) where
+ * the NMK must be re-wrapped under a different KEK.
  */
-export async function unwrapNMK(blob: WrapBlob, kek: CryptoKey): Promise<CryptoKey> {
+export async function unwrapNMK(
+  blob: WrapBlob,
+  kek: CryptoKey,
+  opts: { extractable?: boolean } = {},
+): Promise<CryptoKey> {
   if (blob.v !== PRIVATE_NOTES_VERSION) {
     throw new UnsupportedVersionError(blob.v);
   }
@@ -242,7 +248,7 @@ export async function unwrapNMK(blob: WrapBlob, kek: CryptoKey): Promise<CryptoK
     'raw',
     raw,
     { name: 'AES-GCM', length: KEY_BITS },
-    false,
+    opts.extractable ?? false,
     ['encrypt', 'decrypt'],
   );
 }
