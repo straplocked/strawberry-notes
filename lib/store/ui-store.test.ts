@@ -101,6 +101,7 @@ describe('hydrateSettingsFromStorage', () => {
         sidebarHidden: true,
         sidebarWidth: 260,
         noteListWidth: 340,
+        sidebarSections: { library: false, time: true, folders: false, tags: true },
       }),
     );
     hydrateSettingsFromStorage();
@@ -111,6 +112,7 @@ describe('hydrateSettingsFromStorage', () => {
       sidebarHidden: true,
       sidebarWidth: 260,
       noteListWidth: 340,
+      sidebarSections: { library: false, time: true, folders: false, tags: true },
     });
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
     expect(document.documentElement.style.getPropertyValue('--sn-sidebar-width')).toBe('260px');
@@ -138,5 +140,42 @@ describe('hydrateSettingsFromStorage', () => {
     // Old payloads without the new width fields fall back to defaults.
     expect(s.sidebarWidth).toBe(DEFAULT_SETTINGS.sidebarWidth);
     expect(s.noteListWidth).toBe(DEFAULT_SETTINGS.noteListWidth);
+    expect(s.sidebarSections).toEqual(DEFAULT_SETTINGS.sidebarSections);
+  });
+
+  it('merges partial sidebarSections with the default record', () => {
+    // A persisted payload that only has *some* of the section keys (e.g.
+    // an older version that pre-dates a new section) should fall back to
+    // the default for any missing key, not produce an undefined-keyed
+    // record that breaks `collapsedSections[k]` reads.
+    window.localStorage.setItem('sn-settings', JSON.stringify({ sidebarSections: { tags: true } }));
+    hydrateSettingsFromStorage();
+    expect(useUIStore.getState().settings.sidebarSections).toEqual({
+      library: false,
+      time: false,
+      folders: false,
+      tags: true,
+    });
+  });
+});
+
+describe('toggleSidebarSection', () => {
+  it('flips the requested section without disturbing the others', () => {
+    expect(useUIStore.getState().settings.sidebarSections.tags).toBe(false);
+    useUIStore.getState().toggleSidebarSection('tags');
+    expect(useUIStore.getState().settings.sidebarSections).toEqual({
+      library: false,
+      time: false,
+      folders: false,
+      tags: true,
+    });
+    useUIStore.getState().toggleSidebarSection('tags');
+    expect(useUIStore.getState().settings.sidebarSections.tags).toBe(false);
+  });
+
+  it('persists collapsed-section changes to localStorage', () => {
+    useUIStore.getState().toggleSidebarSection('folders');
+    const persisted = JSON.parse(window.localStorage.getItem('sn-settings') ?? 'null');
+    expect(persisted.sidebarSections.folders).toBe(true);
   });
 });

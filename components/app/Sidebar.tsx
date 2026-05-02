@@ -18,7 +18,7 @@ import {
   IconTrash,
   IconUsers,
 } from '@/components/icons';
-import { ACCENTS, type Density } from '@/lib/design/accents';
+import { ACCENTS, type Density, type SidebarSectionKey } from '@/lib/design/accents';
 import { drender } from '@/lib/debug';
 import { DRAG_MIME } from '@/lib/dnd';
 import { TIME_RANGES, timeRangeLabel } from '@/lib/notes/time-range';
@@ -70,6 +70,37 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  // The collapsible-toggle inside the section head: chevron + label,
+  // packed into a borderless button that fills the left side of the head
+  // row so the label itself is the click target. A right-side `+` action
+  // (e.g. on Folders) sits outside this button to stay independently
+  // clickable.
+  sectionHeadToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    background: 'transparent',
+    border: 0,
+    padding: 0,
+    margin: 0,
+    color: 'inherit',
+    font: 'inherit',
+    letterSpacing: 'inherit',
+    textTransform: 'inherit',
+    cursor: 'pointer',
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'left',
+  },
+  sectionHeadChevron: {
+    width: 12,
+    height: 12,
+    display: 'grid',
+    placeItems: 'center',
+    color: 'currentColor',
+    transition: 'transform 80ms ease-out',
+    flexShrink: 0,
+  },
   tagCloud: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '4px 10px 10px' },
   footer: {
     marginTop: 'auto',
@@ -105,8 +136,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 6,
     justifyContent: 'center',
-    boxShadow:
-      '0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 3px rgba(0,0,0,0.15)',
+    boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset, 0 1px 3px rgba(0,0,0,0.15)',
   },
   newFolderRow: {
     display: 'flex',
@@ -276,6 +306,9 @@ export interface SidebarProps {
   alwaysShowFolderActions?: boolean;
   /** Show the /admin/users link in the footer when true. */
   isAdmin?: boolean;
+  /** Per-section collapsed state. `true` = collapsed (body hidden). */
+  collapsedSections?: Record<SidebarSectionKey, boolean>;
+  onToggleSection?: (key: SidebarSectionKey) => void;
 }
 
 interface FolderTreeNode {
@@ -310,14 +343,24 @@ function buildFolderTree(folders: FolderDTO[]): FolderTreeNode[] {
 }
 
 function SidebarImpl(props: SidebarProps) {
-  const { folders, tags, view, onView, density, fullWidth, alwaysShowFolderActions } = props;
+  const {
+    folders,
+    tags,
+    view,
+    onView,
+    density,
+    fullWidth,
+    alwaysShowFolderActions,
+    collapsedSections,
+    onToggleSection,
+  } = props;
+  const isSectionCollapsed = (k: SidebarSectionKey) => !!collapsedSections?.[k];
   drender('Sidebar', { folders: folders.length, tags: tags.length, view: view.kind });
   const dense = density === 'dense';
   const isActiveKind = (k: FolderView['kind']) => view.kind === k;
   const isActiveFolder = (id: string) => view.kind === 'folder' && view.id === id;
   const isActiveTag = (id: string) => view.kind === 'tag' && view.id === id;
-  const isActiveTime = (range: TimeRange) =>
-    view.kind === 'time' && view.range === range;
+  const isActiveTime = (range: TimeRange) => view.kind === 'time' && view.range === range;
 
   // `addingUnder` carries the parent folder id we're creating a sub-folder
   // under; null means a new top-level folder; undefined means not adding.
@@ -705,6 +748,36 @@ function SidebarImpl(props: SidebarProps) {
     ? { ...styles.root, width: '100%', flexShrink: 1, borderRight: 0 }
     : styles.root;
 
+  // Collapsible section header. Click anywhere on the label/chevron to
+  // toggle. `trailing` renders to the right of the toggle so per-section
+  // actions (e.g. the Folders `+`) remain independently clickable.
+  const sectionHead = (key: SidebarSectionKey, label: string, trailing?: React.ReactNode) => {
+    const collapsed = isSectionCollapsed(key);
+    const toggle = () => onToggleSection?.(key);
+    return (
+      <div style={styles.sectionHead}>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={`sn-section-${key}`}
+          style={styles.sectionHeadToggle}
+          onClick={toggle}
+        >
+          <span
+            style={{
+              ...styles.sectionHeadChevron,
+              transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+            }}
+          >
+            <IconChevronRight size={9} />
+          </span>
+          <span>{label}</span>
+        </button>
+        {trailing}
+      </div>
+    );
+  };
+
   return (
     <aside style={rootStyle}>
       {!fullWidth && (
@@ -721,124 +794,144 @@ function SidebarImpl(props: SidebarProps) {
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <div style={styles.section}>
-          <div style={styles.sectionHead}>
-            <span>Library</span>
-          </div>
-          <div
-            className={navRowClass(isActiveKind('all'))}
-            style={{
-              ...navRowStyle(isActiveKind('all'), dense),
-              ...dropHighlight(dropTargetId === '__unfiled__'),
-            }}
-            onClick={() => onView({ kind: 'all' })}
-            {...makeDropHandlers('__unfiled__', null)}
-          >
-            <IconAll size={15} style={{ color: isActiveKind('all') ? 'var(--berry)' : 'var(--ink-3)' }} />
-            <span>All Notes</span>
-            <span style={countStyle}>{props.allCount}</span>
-          </div>
-          <div
-            className={navRowClass(isActiveKind('pinned'))}
-            style={navRowStyle(isActiveKind('pinned'), dense)}
-            onClick={() => onView({ kind: 'pinned' })}
-          >
-            <IconPin size={15} style={{ color: isActiveKind('pinned') ? 'var(--berry)' : 'var(--ink-3)' }} />
-            <span>Pinned</span>
-            <span style={countStyle}>{props.pinnedCount}</span>
-          </div>
-        </div>
-
-        <div style={styles.section}>
-          <div style={styles.sectionHead}>
-            <span>Time</span>
-          </div>
-          {TIME_RANGES.map((range) => {
-            const active = isActiveTime(range);
-            return (
+          {sectionHead('library', 'Library')}
+          {!isSectionCollapsed('library') && (
+            <div id="sn-section-library">
               <div
-                key={range}
-                className={navRowClass(active)}
-                style={navRowStyle(active, dense)}
-                onClick={() => onView({ kind: 'time', range })}
-                title={`Notes updated — ${timeRangeLabel(range)}`}
+                className={navRowClass(isActiveKind('all'))}
+                style={{
+                  ...navRowStyle(isActiveKind('all'), dense),
+                  ...dropHighlight(dropTargetId === '__unfiled__'),
+                }}
+                onClick={() => onView({ kind: 'all' })}
+                {...makeDropHandlers('__unfiled__', null)}
               >
-                <IconCalendar
+                <IconAll
                   size={15}
-                  style={{ color: active ? 'var(--berry)' : 'var(--ink-3)' }}
+                  style={{ color: isActiveKind('all') ? 'var(--berry)' : 'var(--ink-3)' }}
                 />
-                <span>{timeRangeLabel(range)}</span>
+                <span>All Notes</span>
+                <span style={countStyle}>{props.allCount}</span>
               </div>
-            );
-          })}
+              <div
+                className={navRowClass(isActiveKind('pinned'))}
+                style={navRowStyle(isActiveKind('pinned'), dense)}
+                onClick={() => onView({ kind: 'pinned' })}
+              >
+                <IconPin
+                  size={15}
+                  style={{ color: isActiveKind('pinned') ? 'var(--berry)' : 'var(--ink-3)' }}
+                />
+                <span>Pinned</span>
+                <span style={countStyle}>{props.pinnedCount}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={styles.section}>
-          <div style={styles.sectionHead}>
-            <span>Folders</span>
-            {props.onAddFolder && (
+          {sectionHead('time', 'Time')}
+          {!isSectionCollapsed('time') && (
+            <div id="sn-section-time">
+              {TIME_RANGES.map((range) => {
+                const active = isActiveTime(range);
+                return (
+                  <div
+                    key={range}
+                    className={navRowClass(active)}
+                    style={navRowStyle(active, dense)}
+                    onClick={() => onView({ kind: 'time', range })}
+                    title={`Notes updated — ${timeRangeLabel(range)}`}
+                  >
+                    <IconCalendar
+                      size={15}
+                      style={{ color: active ? 'var(--berry)' : 'var(--ink-3)' }}
+                    />
+                    <span>{timeRangeLabel(range)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={styles.section}>
+          {sectionHead(
+            'folders',
+            'Folders',
+            props.onAddFolder ? (
               <button
                 type="button"
                 className="sn-icon-btn"
                 aria-label="New folder"
                 style={{ ...styles.iconBtn, width: 18, height: 18 }}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Opening a new-folder draft in a collapsed Folders section
+                  // would render the input out of view; expand on demand so
+                  // the user actually sees what they just asked for.
+                  if (isSectionCollapsed('folders')) onToggleSection?.('folders');
                   setAddingUnder(null);
                   setDraftName('');
                 }}
               >
                 <IconPlus size={12} />
               </button>
-            )}
-          </div>
-          {addingUnder === null && (
-            <div style={{ ...styles.newFolderRow, gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                <span style={{ width: 12, flexShrink: 0 }} />
-                <span style={dotStyle('var(--ink-4)')} />
-              </div>
-              <input
-                autoFocus
-                style={styles.newFolderInput}
-                placeholder="New folder…"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitDraft();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setAddingUnder(undefined);
-                    setDraftName('');
-                  }
-                }}
-                onBlur={commitDraft}
-              />
+            ) : null,
+          )}
+          {!isSectionCollapsed('folders') && (
+            <div id="sn-section-folders">
+              {addingUnder === null && (
+                <div style={{ ...styles.newFolderRow, gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <span style={{ width: 12, flexShrink: 0 }} />
+                    <span style={dotStyle('var(--ink-4)')} />
+                  </div>
+                  <input
+                    autoFocus
+                    style={styles.newFolderInput}
+                    placeholder="New folder…"
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitDraft();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setAddingUnder(undefined);
+                        setDraftName('');
+                      }
+                    }}
+                    onBlur={commitDraft}
+                  />
+                </div>
+              )}
+              {tree.map((node) => renderFolderNode(node))}
             </div>
           )}
-          {tree.map((node) => renderFolderNode(node))}
         </div>
 
         {tags.length > 0 && (
           <div style={styles.section}>
-            <div style={styles.sectionHead}>
-              <span>Tags</span>
-            </div>
-            <div style={styles.tagCloud}>
-              {tags.map((t) => {
-                const active = isActiveTag(t.id);
-                return (
-                  <span
-                    key={t.id}
-                    className={active ? 'sn-tag-chip sn-tag-chip--active' : 'sn-tag-chip'}
-                    style={tagChipStyle(active)}
-                    onClick={() => onView(active ? { kind: 'all' } : { kind: 'tag', id: t.id })}
-                  >
-                    #{t.name}
-                  </span>
-                );
-              })}
-            </div>
+            {sectionHead('tags', 'Tags')}
+            {!isSectionCollapsed('tags') && (
+              <div id="sn-section-tags" style={styles.tagCloud}>
+                {tags.map((t) => {
+                  const active = isActiveTag(t.id);
+                  return (
+                    <span
+                      key={t.id}
+                      className={active ? 'sn-tag-chip sn-tag-chip--active' : 'sn-tag-chip'}
+                      style={tagChipStyle(active)}
+                      onClick={() => onView(active ? { kind: 'all' } : { kind: 'tag', id: t.id })}
+                    >
+                      #{t.name}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -848,7 +941,10 @@ function SidebarImpl(props: SidebarProps) {
             style={navRowStyle(isActiveKind('trash'), dense)}
             onClick={() => onView({ kind: 'trash' })}
           >
-            <IconTrash size={15} style={{ color: isActiveKind('trash') ? 'var(--berry)' : 'var(--ink-3)' }} />
+            <IconTrash
+              size={15}
+              style={{ color: isActiveKind('trash') ? 'var(--berry)' : 'var(--ink-3)' }}
+            />
             <span>Trash</span>
             <span style={countStyle}>{props.trashCount}</span>
           </div>
@@ -878,12 +974,7 @@ function SidebarImpl(props: SidebarProps) {
             </Link>
           )}
           {props.onSignOut && (
-            <button
-              style={styles.footBtn}
-              onClick={props.onSignOut}
-              title="Sign out"
-              type="button"
-            >
+            <button style={styles.footBtn} onClick={props.onSignOut} title="Sign out" type="button">
               <IconLogout size={15} />
             </button>
           )}
