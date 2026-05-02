@@ -31,6 +31,10 @@ import {
 } from '@/lib/api/hooks';
 import { dlog, drender, dtime } from '@/lib/debug';
 import type { FolderDTO, NoteListItemDTO, PMDoc } from '@/lib/types';
+import { PRIVATE_NOTES_ENABLED } from '@/lib/private-notes/feature-flag';
+import { usePrivateNotesStore } from '@/lib/store/private-notes-store';
+import { PrivateNotesUnlockModal } from './settings/PrivateNotesUnlockModal';
+import { PrivateNotesSetupModal } from './settings/PrivateNotesSetupModal';
 
 type ConfirmState =
   | { kind: 'folder'; folder: FolderDTO }
@@ -72,6 +76,54 @@ export function AppShell() {
   const createFolder = useCreateFolder();
   const deleteFolder = useDeleteFolder();
   const patchFolder = usePatchFolder();
+
+  // Private Notes (v1.5) — Zustand store + modal state. The store hydrates
+  // lazily (status fetch on mount) so the round-trip cost is paid once per
+  // session, not per render.
+  const pnStatus = usePrivateNotesStore((s) => s.status);
+  const pnHydrate = usePrivateNotesStore((s) => s.hydrate);
+  const pnDecrypt = usePrivateNotesStore((s) => s.decryptNote);
+  const pnEncrypt = usePrivateNotesStore((s) => s.encryptNote);
+  const [pnUnlockOpen, setPnUnlockOpen] = useState(false);
+  const [pnSetupOpen, setPnSetupOpen] = useState(false);
+  // Cache of decrypted PMDocs keyed by note id. Held in React state so
+  // mutations trigger re-render. We don't put this in the store because a
+  // re-render of AppShell shouldn't drop it, and we don't put it in React
+  // Query because the values derive from in-memory key material that isn't
+  // part of the cache identity.
+  const [decryptedMap, setDecryptedMap] = useState<Map<string, PMDoc>>(() => new Map());
+  // The ref mirrors `decryptedMap` for stable access from event handlers
+  // (toggle-lock, scheduleSave) without re-creating callbacks per render.
+  const decryptedRef = useRef(decryptedMap);
+  decryptedRef.current = decryptedMap;
+  const setDecrypted = useCallback((id: string, doc: PMDoc) => {
+    setDecryptedMap((prev) => {
+      const next = new Map(prev);
+      next.set(id, doc);
+      return next;
+    });
+  }, []);
+  const dropDecrypted = useCallback((id: string) => {
+    setDecryptedMap((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (!PRIVATE_NOTES_ENABLED) return;
+    void pnHydrate();
+    // Subscribe outside the React render cycle so the lock transition
+    // doesn't trigger a set-state-in-effect lint warning. The Zustand
+    // subscribe() returns its unsubscribe — wired to the effect's cleanup.
+    const unsub = usePrivateNotesStore.subscribe((s, prev) => {
+      if (prev.status === 'unlocked' && s.status !== 'unlocked') {
+        setDecryptedMap(new Map());
+      }
+    });
+    return unsub;
+  }, [pnHydrate]);
 
   drender('AppShell', {
     view: view.kind,
@@ -192,25 +244,46 @@ export function AppShell() {
   // Stable identity so child callbacks (onChangeTitle, onDirty) can be memoized
   // without re-creating on every AppShell render.
   const scheduleSave = useCallback(
-    (id: string) => {
+    (id: string, isPrivate: boolean) => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
-      timerRef.current = window.setTimeout(() => {
+      timerRef.current = window.setTimeout(async () => {
         const pending = pendingRef.current;
         pendingRef.current = {};
-        const patch: { title?: string; content?: PMDoc } = {};
+        const patch: Parameters<typeof patchNote.mutate>[0]['patch'] = {};
         if (pending.title !== undefined) patch.title = pending.title;
         if (pending.contentDirty && editorRef.current) {
-          patch.content = editorRef.current.getJSON() as PMDoc;
+          const doc = editorRef.current.getJSON() as PMDoc;
+          if (isPrivate) {
+            // Private save path: encrypt the PMDoc client-side and ship the
+            // ciphertext + IV envelope. Server zeroes contentText/snippet
+            // and skips embedding/wiki-link extraction (see lib/notes/service.ts).
+            try {
+              const enc = await pnEncrypt(doc);
+              patch.encryption = enc.encryption;
+              patch.ciphertext = enc.ciphertext;
+              // Cache the freshly encrypted doc so the editor doesn't have
+              // to round-trip through the server for the next render.
+              setDecrypted(id, doc);
+            } catch (err) {
+              // Locked mid-save (or NMK gone). Surface and skip — the user
+              // can unlock and re-save; the in-memory editor still holds
+              // the dirty content.
+              dlog('save', 'encrypt failed', { id, error: (err as Error).message });
+              return;
+            }
+          } else {
+            patch.content = doc;
+          }
         }
         if (Object.keys(patch).length > 0) {
-          dlog('save', 'autosave fire', { id, fields: Object.keys(patch) });
+          dlog('save', 'autosave fire', { id, private: isPrivate, fields: Object.keys(patch) });
           patchNote.mutate({ id, patch });
         } else {
           dlog('save', 'autosave noop', { id });
         }
       }, 700);
     },
-    [patchNote],
+    [patchNote, pnEncrypt, setDecrypted],
   );
 
   useEffect(() => {
@@ -523,6 +596,93 @@ export function AppShell() {
     />
   );
 
+  const activeIsPrivate = !!activeNote && activeNote.encryption !== null;
+  const decryptedForActive =
+    activeNote && activeIsPrivate ? (decryptedMap.get(activeNote.id) ?? null) : null;
+
+  // Decrypt-on-load: when the active note becomes private + the user is
+  // unlocked + we don't yet have a decrypted PMDoc cached, run the unwrap.
+  // Failures (wrong key, ciphertext tamper) are surfaced via the store's
+  // `lastError` and the user can re-unlock from Settings.
+  useEffect(() => {
+    if (!PRIVATE_NOTES_ENABLED) return;
+    if (!activeNote || !activeIsPrivate || pnStatus !== 'unlocked') return;
+    if (decryptedRef.current.has(activeNote.id)) return;
+    const enc = activeNote.encryption;
+    const ciphertext = activeNote.content;
+    if (!enc || typeof ciphertext !== 'string') return;
+    let cancelled = false;
+    void pnDecrypt(ciphertext, enc).then(
+      (doc) => {
+        if (cancelled) return;
+        setDecrypted(activeNote.id, doc);
+      },
+      (err) => {
+        dlog('private-notes', 'decrypt failed', { id: activeNote.id, error: (err as Error).message });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [activeNote, activeIsPrivate, pnStatus, pnDecrypt, setDecrypted]);
+
+  const onToggleLock = () => {
+    if (!PRIVATE_NOTES_ENABLED || !activeNote) return;
+    // Unconfigured → open the setup modal first; the user can come back to
+    // toggle once setup is done.
+    if (pnStatus === 'unconfigured') {
+      setPnSetupOpen(true);
+      return;
+    }
+    if (pnStatus === 'locked') {
+      setPnUnlockOpen(true);
+      return;
+    }
+    if (activeIsPrivate) {
+      // Private → plaintext: confirm, then PATCH with `encryption: null` +
+      // the decrypted PMDoc so the server can rebuild contentText / snippet
+      // / embedding stale flag.
+      if (
+        !window.confirm(
+          'Make this note plaintext? The body will be visible to MCP clients, the web clipper, and anyone with database access.',
+        )
+      ) {
+        return;
+      }
+      const doc =
+        decryptedForActive ??
+        (editorRef.current ? (editorRef.current.getJSON() as PMDoc) : null);
+      if (!doc) {
+        dlog('ui', 'toggle-lock: no decrypted content available');
+        return;
+      }
+      patchNote.mutate({
+        id: activeNote.id,
+        patch: { encryption: null, content: doc },
+      });
+      dropDecrypted(activeNote.id);
+      return;
+    }
+    // Plaintext → private: encrypt the editor's current PMDoc and save.
+    void (async () => {
+      const doc = editorRef.current
+        ? (editorRef.current.getJSON() as PMDoc)
+        : (activeNote.content as PMDoc);
+      try {
+        const enc = await pnEncrypt(doc);
+        patchNote.mutate({
+          id: activeNote.id,
+          patch: { encryption: enc.encryption, ciphertext: enc.ciphertext },
+        });
+        // Pre-populate the cache so the editor doesn't immediately drop to
+        // the locked overlay while React Query refetches.
+        setDecrypted(activeNote.id, doc);
+      } catch (err) {
+        dlog('ui', 'toggle-lock: encrypt failed', { error: (err as Error).message });
+      }
+    })();
+  };
+
   const editorEl = (
     <Editor
       note={activeNote}
@@ -534,12 +694,12 @@ export function AppShell() {
       onChangeTitle={(title) => {
         if (!activeNoteId) return;
         pendingRef.current.title = title;
-        scheduleSave(activeNoteId);
+        scheduleSave(activeNoteId, activeIsPrivate);
       }}
       onDirty={() => {
         if (!activeNoteId) return;
         pendingRef.current.contentDirty = true;
-        scheduleSave(activeNoteId);
+        scheduleSave(activeNoteId, activeIsPrivate);
       }}
       onTogglePin={onTogglePinActive}
       onChangeTags={(tagNames) => {
@@ -550,6 +710,11 @@ export function AppShell() {
       onTrash={onTrashNote}
       onRestore={onRestoreNote}
       onDeleteForever={onRequestDeleteForever}
+      privateNotesEnabled={PRIVATE_NOTES_ENABLED}
+      decryptedContent={decryptedForActive}
+      privateNotesStatus={pnStatus}
+      onRequestUnlock={() => setPnUnlockOpen(true)}
+      onToggleLock={onToggleLock}
     />
   );
 
@@ -645,6 +810,18 @@ export function AppShell() {
         actions={mobileMenuActions}
         onClose={() => setMobileMenuOpen(false)}
       />
+      {PRIVATE_NOTES_ENABLED && (
+        <>
+          <PrivateNotesUnlockModal
+            open={pnUnlockOpen}
+            onClose={() => setPnUnlockOpen(false)}
+          />
+          <PrivateNotesSetupModal
+            open={pnSetupOpen}
+            onClose={() => setPnSetupOpen(false)}
+          />
+        </>
+      )}
     </>
   );
 }
