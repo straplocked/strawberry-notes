@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import styles from '../auth.module.css';
 
-export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) {
+export function ForgotPasswordForm() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [pending, setPending] = useState(false);
@@ -58,12 +58,6 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
       <p className={styles.subtitle}>
         Enter your email and we’ll send you a link to choose a new one.
       </p>
-      {!emailEnabled && (
-        <p className={styles.error} style={{ marginBottom: 12 }}>
-          Heads up: email isn’t configured on this instance, so the reset link can’t be delivered.
-          Submit anyway to confirm — or contact the operator.
-        </p>
-      )}
       <form className={styles.form} onSubmit={onSubmit}>
         <div>
           <label className={styles.label} htmlFor="email">
