@@ -158,3 +158,5 @@ The provisioning helpers live in `lib/auth/user-admin.ts` and are unit-tested; t
 - **`AUTH_URL`** — public URL where the app is served (e.g. `https://notes.example.com`). Auth.js uses this for callback-URL construction; mismatch causes sign-in redirects to fail.
 
 Both are read in `lib/auth.ts` via Auth.js's built-in env handling. Do not commit either.
+
+When `AUTH_URL` is unset, the route handler at `app/api/auth/[...nextauth]/route.ts` rewrites every incoming `req.url` to use the user-facing origin — `X-Forwarded-Host` (with `X-Forwarded-Proto`) when present, otherwise the request's own `Host` header — before delegating to Auth.js. This is necessary because Next.js standalone (`output: "standalone"`) builds `req.url` from the runner's `HOSTNAME:PORT` env vars (e.g. `http://0.0.0.0:3000/...` inside Docker), and Auth.js uses `options.url.origin` everywhere it constructs an absolute URL — so without the rewrite, a LAN sign-in (`http://192.168.x.x:3200/login`) would bounce the browser to `http://0.0.0.0:3000/...` after credentials POST. Set `AUTH_URL` explicitly when the proxy in front strips `X-Forwarded-*`.
