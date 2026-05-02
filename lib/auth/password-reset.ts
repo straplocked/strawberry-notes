@@ -143,7 +143,7 @@ export async function consumePasswordResetToken(
     const passwordHash = await bcryptHash(newPassword, 10);
     await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
 
-    notifyPasswordChanged(row.userId, { source: 'self-service reset', changedAt: now });
+    void notifyPasswordChanged(row.userId, { source: 'self-service reset', changedAt: now });
 
     return { ok: true, userId: row.userId };
   });

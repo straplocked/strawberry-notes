@@ -74,8 +74,8 @@ export function notifyPasswordChanged(
   userId: string,
   ctx: PasswordChangedContext,
   opts: FireOpts = {},
-): void {
-  void fire(
+): Promise<void> {
+  return fire(
     userId,
     'passwordChanged',
     (to) =>
@@ -100,8 +100,8 @@ export function notifyTokenCreated(
   userId: string,
   ctx: TokenCreatedContext,
   opts: FireOpts = {},
-): void {
-  void fire(
+): Promise<void> {
+  return fire(
     userId,
     'tokenCreated',
     (to) =>
@@ -128,8 +128,8 @@ export function notifyWebhookCreated(
   userId: string,
   ctx: WebhookCreatedContext,
   opts: FireOpts = {},
-): void {
-  void fire(
+): Promise<void> {
+  return fire(
     userId,
     'webhookCreated',
     (to) =>
@@ -157,8 +157,8 @@ export function notifyWebhookDeadLetter(
   userId: string,
   ctx: WebhookDeadLetterContext,
   opts: FireOpts = {},
-): void {
-  void fire(
+): Promise<void> {
+  return fire(
     userId,
     'webhookDeadLetter',
     (to) =>
