@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { getEffectiveSession } from '@/lib/auth/require';
 import { AdminUsersClient } from '@/components/app/admin/AdminUsersClient';
 
 export const metadata: Metadata = { title: 'Admin · Users — Strawberry Notes' };
 
 export default async function AdminUsersPage() {
-  const session = await auth();
+  const session = await getEffectiveSession();
   // 404 (not 403) for non-admins — don't advertise the route's existence to
   // signed-in regular users. The middleware/authorize callback also blocks
   // unauthed access; this is belt-and-braces server-side.

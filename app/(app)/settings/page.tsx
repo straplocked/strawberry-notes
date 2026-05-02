@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { AppearanceSection } from '@/components/app/settings/AppearanceSection';
 import { EmailPreferencesSection } from '@/components/app/settings/EmailPreferencesSection';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
+import { SecuritySection } from '@/components/app/settings/SecuritySection';
 import { TagsSection } from '@/components/app/settings/TagsSection';
 import { TokensSection } from '@/components/app/settings/TokensSection';
 import { WebhooksSection } from '@/components/app/settings/WebhooksSection';
@@ -46,6 +47,7 @@ export default function SettingsPage() {
         </h1>
       </header>
       <AppearanceSection />
+      <SecuritySection />
       <TagsSection />
       <TokensSection />
       <WebhooksSection />

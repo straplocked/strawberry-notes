@@ -24,6 +24,7 @@ export async function GET() {
       role: users.role,
       disabledAt: users.disabledAt,
       emailConfirmedAt: users.emailConfirmedAt,
+      totpEnrolledAt: users.totpEnrolledAt,
       createdAt: users.createdAt,
     })
     .from(users)
