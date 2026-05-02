@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { IconPlus, IconX } from '@/components/icons';
+import { IconCog, IconPlus, IconX } from '@/components/icons';
 
 export type MobilePane = 'folders' | 'list' | 'editor';
 
@@ -84,6 +84,7 @@ export interface MobileTopBarProps {
   onCloseFolders: () => void;
   onBackToList: () => void;
   onNewNote: () => void;
+  onOpenMenu: () => void;
 }
 
 export function MobileTopBar({
@@ -93,6 +94,7 @@ export function MobileTopBar({
   onCloseFolders,
   onBackToList,
   onNewNote,
+  onOpenMenu,
 }: MobileTopBarProps) {
   return (
     <div style={barStyle} className="safe-top safe-x">
@@ -114,13 +116,14 @@ export function MobileTopBar({
 
       <span style={titleStyle}>{title}</span>
 
-      {pane === 'list' ? (
+      {pane === 'list' && (
         <button style={btnStyle} onClick={onNewNote} type="button" aria-label="New note">
           <IconPlus size={18} />
         </button>
-      ) : (
-        <span style={{ ...btnStyle, visibility: 'hidden' }} aria-hidden="true" />
       )}
+      <button style={btnStyle} onClick={onOpenMenu} type="button" aria-label="Open menu">
+        <IconCog size={18} />
+      </button>
     </div>
   );
 }

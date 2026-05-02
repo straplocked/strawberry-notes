@@ -12,6 +12,7 @@ import { TweaksPanel } from './Tweaks';
 import { MobileTopBar, type MobilePane } from './MobileTopBar';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ActionSheet, type ActionSheetAction } from './ActionSheet';
+import { IconCog, IconLogout, IconMoon, IconSun } from '@/components/icons';
 import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
@@ -53,6 +54,7 @@ export function AppShell() {
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [actionMenuNote, setActionMenuNote] = useState<NoteListItemDTO | null>(null);
   const [folderPickerNoteId, setFolderPickerNoteId] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const foldersQ = useFolders();
   const tagsQ = useTags();
@@ -422,6 +424,40 @@ export function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderPickerNoteId, folders]);
 
+  const mobileMenuActions: ActionSheetAction[] = useMemo(() => {
+    const close = () => setMobileMenuOpen(false);
+    return [
+      {
+        id: 'settings',
+        label: 'Settings',
+        icon: <IconCog size={18} />,
+        onSelect: () => {
+          close();
+          router.push('/settings');
+        },
+      },
+      {
+        id: 'theme',
+        label: settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+        icon: settings.theme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />,
+        onSelect: () => {
+          setTheme(settings.theme === 'dark' ? 'light' : 'dark');
+          close();
+        },
+      },
+      {
+        id: 'signout',
+        label: 'Sign out',
+        icon: <IconLogout size={18} />,
+        onSelect: () => {
+          close();
+          void onSignOut();
+        },
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.theme, router, setTheme]);
+
   // Desktop keeps `sidebarHidden`; on mobile we always keep Sidebar mounted
   // under the 'folders' pane, so the setting doesn't apply.
   const showSidebar = isMobile ? true : !settings.sidebarHidden;
@@ -519,6 +555,7 @@ export function AppShell() {
         onCloseFolders={() => pushMobilePane('list')}
         onBackToList={() => pushMobilePane('list')}
         onNewNote={onNewNote}
+        onOpenMenu={() => setMobileMenuOpen(true)}
       />
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <div style={paneWrap(mobilePane === 'folders')}>{sidebarEl}</div>
@@ -581,6 +618,11 @@ export function AppShell() {
         title="Move to folder"
         actions={folderPickerActions}
         onClose={() => setFolderPickerNoteId(null)}
+      />
+      <ActionSheet
+        open={mobileMenuOpen}
+        actions={mobileMenuActions}
+        onClose={() => setMobileMenuOpen(false)}
       />
     </>
   );
