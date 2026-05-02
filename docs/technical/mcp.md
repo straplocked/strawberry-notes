@@ -146,6 +146,7 @@ curl -s -X POST https://notes.example.com/api/mcp \
 ## Security Notes
 
 - Tokens grant the same access as the user's password (no scopes in v1). Treat them accordingly; use one per client and revoke on compromise.
+- **Private Notes are invisible to MCP.** Any note the user has marked Private (see [private-notes.md](private-notes.md)) is excluded from `list_notes` / `search_notes` / `search_semantic`, returns "not found" from `get_note` / `export_note_markdown`, and is omitted from `get_backlinks`. The bodies are AES-256-GCM ciphertext that the server cannot read; even if MCP wanted to surface them, there is nothing to surface.
 - Rate limiting is **not** implemented in the app. Put it in the reverse proxy if you expose the endpoint publicly (Caddy, nginx, Cloudflare).
 - The endpoint does not participate in cookie-based auth — it cannot be triggered from a malicious page in the user's browser.
 - Uploads (image attachments) are out of scope for MCP in v1 — they remain browser-only.

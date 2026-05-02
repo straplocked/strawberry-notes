@@ -380,6 +380,54 @@ Restore is the reverse of each: `psql < backup.sql` and `tar -xzf uploads.tgz` i
 
 For anything beyond "my notebook", schedule the pair (they must be kept in step) with your normal backup tooling. There's no built-in backup scheduler.
 
+### Encrypted backups
+
+Pipe the dumps through `gpg --symmetric` so a leaked backup file is gibberish without the passphrase:
+
+```bash
+docker compose exec -T postgres pg_dump -U strawberry strawberry \
+  | gpg --symmetric --cipher-algo aes256 -o backup.sql.gpg
+docker compose run --rm -v "$PWD:/backup" app \
+  tar -cz /data/uploads | gpg --symmetric --cipher-algo aes256 -o uploads.tgz.gpg
+```
+
+Restore: `gpg -d backup.sql.gpg | psql ...` and `gpg -d uploads.tgz.gpg | tar -xz ...`. Store the passphrase out-of-band — losing it loses the backup.
+
+---
+
+## Database at rest
+
+Strawberry Notes does **not** encrypt the database itself — Postgres reads and writes plaintext to its data files. The application can do anything to the bytes on disk it likes, but the operator owns the storage layer. For any deployment where the host disk could leak (stolen laptop, decommissioned server, leaked cloud snapshot), encrypt the storage volume.
+
+This is orthogonal to [Private Notes](private-notes.md) — they protect a *user's* sensitive note bodies from the operator and from MCP. **Disk encryption protects everything else** (titles, plaintext notes, attachments, the private-note metadata) from anyone who steals the disk.
+
+**LUKS** (the standard Linux answer) on the partition holding `pgdata`:
+
+```bash
+sudo cryptsetup luksFormat /dev/sdX1
+sudo cryptsetup open /dev/sdX1 strawberry-pg
+sudo mkfs.ext4 /dev/mapper/strawberry-pg
+sudo mount /dev/mapper/strawberry-pg /var/lib/strawberry/pgdata
+# Then point docker-compose's pgdata volume at the mounted path.
+```
+
+`cryptsetup` prompts for a passphrase on every mount — automate with `crypttab` + a key file in `/root` if the host should boot unattended. The trade-off is the obvious one: a key file that the running OS can read is no defence against an attacker with root, only against an attacker with the disk.
+
+**Cloud volumes** (the easier answer for hosted deployments):
+
+| Provider     | What to enable                                                  |
+| ------------ | --------------------------------------------------------------- |
+| AWS EC2 + EBS | EBS Encryption on the volume backing `pgdata` (default-on per region). |
+| GCP Compute Engine | Customer-supplied encryption keys on the persistent disk. Default Google-managed encryption is on regardless. |
+| DigitalOcean | Block Storage volumes are encrypted at rest by default.         |
+| Hetzner      | Cloud volumes encrypt at rest by default. Roll your own LUKS for stronger guarantees. |
+| Synology     | "Encrypted shared folders" — pick one, mount the bind there.    |
+| Unraid       | Set the cache pool / array to "Encrypted XFS" or "Encrypted BTRFS" before formatting. |
+
+**What it doesn't defend against:** anyone with login access to the running host (root, the `postgres` user, anyone in `docker` group), `pg_dump` over the network, or a leaked `.env` file. The disk is encrypted at rest; in-flight is the application's job.
+
+If your threat model includes "someone gets the database file *and* the running OS isn't there to ask for a key", LUKS with a passphrase entered at boot is the only real answer. Everything else is encryption-with-a-key-the-attacker-also-has.
+
 ---
 
 ## Upgrades

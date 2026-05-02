@@ -112,6 +112,7 @@ Two routes were widened to support the extension. Both changes are additive and 
 
 - Tokens live in `chrome.storage.local` (never `sync`, never written to content script, never logged).
 - Tokens carry the same access as the user's password — no scopes in v1.2. Revoke in Settings on compromise.
+- **Private Notes are invisible to the clipper.** The clipper authenticates with the same `apiTokens` table MCP uses, so Private Notes (see [private-notes.md](private-notes.md)) are excluded from any read the clipper performs against `/api/notes/*`. The clipper is write-only in practice — it `POST`s to `/api/notes/import` — so the visibility constraint mostly matters for any future "read existing notes from the clipper popup" feature.
 - `turndown` is bundled — no remote code fetch at runtime (MV3 forbids it).
 - Permissions are minimal: `activeTab`, `scripting`, `storage`, `<all_urls>`. `<all_urls>` is justified by "clip any page"; the content script runs only on user-initiated click.
 

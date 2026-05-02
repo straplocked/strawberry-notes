@@ -5,6 +5,27 @@
 
 ---
 
+## Run 7 — 2026-05-02
+
+**Summary:** v1.5 — **Private Notes** documentation pass. The crypto envelope, threat model, and recovery semantics for the per-note opt-in E2EE feature shipped over PRs #50, #54, #55. This pass adds the canonical `docs/technical/private-notes.md`, rewrites the roadmap E2EE non-goal entry into a "full-workspace E2EE" non-goal + a v1.5 section above it, adds a "Database at rest" section to deployment docs (LUKS / cloud volume encryption / encrypted backups), and threads the visibility note through every neighbouring doc that mentions agents, the clipper, the embedding worker, or the FTS index. Doc-only — no code changes in this run.
+
+**Files modified:**
+
+- `docs/technical/private-notes.md` — **new file** (~140 lines). Covers the WebCrypto envelope (PBKDF2-SHA256 @ 600 000 iters → AES-256-GCM, 32-byte NMK wrapped twice with passphrase + recovery KEKs, `sn-private-notes-v1` AAD), the per-note ciphertext layout, the wrap envelope JSON shape, the full threat model (defends LLM exfil via MCP / casual operator inspection / plaintext FTS / plaintext backups / clipper reads; does NOT defend rogue server bundle / debugger-on-unlocked-tab / DB+passphrase-or-recovery), recovery semantics (lose-both is unrecoverable, by design), the "what's hidden from whom" matrix, and an implementation map cross-linking every relevant code file.
+- `docs/technical/README.md` — added `private-notes.md` to the technical TOC table.
+- `docs/technical/mcp.md` — Security Notes section gains an explicit "Private Notes are invisible to MCP" bullet describing the `includePrivate: false` contract across `list_notes` / `search_notes` / `search_semantic` / `get_note` / `get_backlinks` / `export_note_markdown`.
+- `docs/technical/extension.md` — Security considerations section gains the same invisibility note for the web clipper, with the nuance that the clipper is write-only in practice.
+- `docs/technical/webhooks.md` — `note.linked` description gains a clarifying sentence: private notes can never be link sources because server-side wiki-link extraction is skipped; plaintext-→-private-target resolves and fires normally.
+- `docs/technical/database.md` — `notes.encryption` jsonb? column added to the `notes` table reference with a description of the envelope shape and the forced-empty rule for derived columns. New `notes_encryption_idx` partial index documented. New `user_encryption` table section between `webhooks` and the Relations diagram, covering `passphraseWrap` / `recoveryWrap` shape and the lazy-create + DELETE-when-empty lifecycle.
+- `docs/technical/deployment.md` — new **Encrypted backups** subsection under Backups with the `pg_dump | gpg --symmetric` recipe. New top-level **Database at rest** section after Backups: framing (orthogonal to Private Notes), LUKS recipe with `cryptsetup`, cloud-volume table covering AWS EBS / GCP CSEK / DigitalOcean / Hetzner / Synology / Unraid, "what it doesn't defend against" callout, and the LUKS-with-passphrase-at-boot escape hatch. Deployment doc grew from 400 → ~470 lines; near the split threshold but kept as one file (still the single coherent operator-facing reference).
+- `docs/leadership/roadmap.md` — Explicit Non-Goals entry "End-to-end encryption" rewritten as "Full-workspace E2EE by default" with a forward link to v1.5. New `## v1.5 — Private Notes (shipped 2026-05-02)` section between v1.4 Tier 2 and the Non-Goals header, covering what shipped (per-note opt-in / crypto envelope / recovery model / MCP+clipper invisibility / Settings panel / workspace export / operator at-rest guidance) plus the non-bloat budget (zero new runtime deps, one table, one column, one lib module, one Settings panel, one new doc).
+- `docs/user/features.md` — new **Private Notes** section after **Connecting an AI assistant (MCP)**, with a one-line forward reference at the bottom of the MCP section. Covers one-time setup, marking a note private, unlocking, reverting to plaintext, and the four important warnings (lose-both = lose the bodies; titles/folders/tags stay visible; no search inside private notes; no wiki-links from private notes).
+- `docs/user/getting-started.md` — added a "mark sensitive notes Private" bullet to step 5 (Organise as you go) with a forward link to the features section.
+- `docs/README.md` — added Private Notes row to the Quick Links table.
+- `DOC_UPDATE.md` — Run counter 6 → 7; last-run date 2026-05-02.
+
+---
+
 ## Run 6 — 2026-04-28
 
 **Summary:** v1.3 Tier 4 — deploy-hardening. The pre-Unraid pass: a public `/api/health` endpoint, an `app`-service compose `healthcheck`, an Unraid deployment subsection, and a wording fix on the embedding-worker replica-safety claim. v1.3 is now closed; the roadmap header flips from "in progress" to "shipped 2026-04-28". One small code change (the route + its unit test); the rest is doc edits.
