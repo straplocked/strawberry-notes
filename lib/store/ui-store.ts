@@ -20,12 +20,16 @@ function loadSettings(): Settings {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    // Merge nested record fields too, so older payloads that pre-date a
-    // section key still get the default for any missing key.
-    const sidebarSections = {
-      ...DEFAULT_SETTINGS.sidebarSections,
-      ...(parsed.sidebarSections ?? {}),
-    };
+    // Build the section record key-by-key from the default, so:
+    // (a) older payloads missing a key fall back to default, and
+    // (b) older payloads carrying a *removed* key (e.g. the retired
+    //     "library") get dropped instead of leaking into the typed record.
+    const persistedSections = (parsed.sidebarSections ?? {}) as Record<string, unknown>;
+    const sidebarSections = { ...DEFAULT_SETTINGS.sidebarSections };
+    for (const k of Object.keys(sidebarSections) as (keyof typeof sidebarSections)[]) {
+      const v = persistedSections[k];
+      if (typeof v === 'boolean') sidebarSections[k] = v;
+    }
     return { ...DEFAULT_SETTINGS, ...parsed, sidebarSections };
   } catch {
     return DEFAULT_SETTINGS;

@@ -56,7 +56,7 @@ export const ACCENTS: readonly Accent[] = [
 export type Theme = 'dark' | 'light';
 export type Density = 'dense' | 'balanced' | 'comfy';
 
-export type SidebarSectionKey = 'library' | 'time' | 'folders' | 'tags';
+export type SidebarSectionKey = 'time' | 'folders' | 'tags';
 
 export interface Settings {
   theme: Theme;
@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarHidden: false,
   sidebarWidth: 232,
   noteListWidth: 300,
-  sidebarSections: { library: false, time: false, folders: false, tags: false },
+  sidebarSections: { time: false, folders: false, tags: false },
 };
 
 /** Min/max bounds the resize handles enforce. Source of truth for both
