@@ -7,6 +7,7 @@ import {
   type AccentId,
   type Density,
   type Settings,
+  type SidebarSectionKey,
   type Theme,
   accentById,
 } from '../design/accents';
@@ -19,7 +20,13 @@ function loadSettings(): Settings {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    // Merge nested record fields too, so older payloads that pre-date a
+    // section key still get the default for any missing key.
+    const sidebarSections = {
+      ...DEFAULT_SETTINGS.sidebarSections,
+      ...(parsed.sidebarSections ?? {}),
+    };
+    return { ...DEFAULT_SETTINGS, ...parsed, sidebarSections };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -70,6 +77,7 @@ interface UIState {
   setAccent: (a: AccentId) => void;
   setDensity: (d: Density) => void;
   toggleSidebar: () => void;
+  toggleSidebarSection: (key: SidebarSectionKey) => void;
   setTweaksOpen: (o: boolean) => void;
   patchSettings: (p: Partial<Settings>) => void;
 }
@@ -88,6 +96,12 @@ export const useUIStore = create<UIState>((set, get) => ({
   setAccent: (accent) => get().patchSettings({ accent }),
   setDensity: (density) => get().patchSettings({ density }),
   toggleSidebar: () => get().patchSettings({ sidebarHidden: !get().settings.sidebarHidden }),
+  toggleSidebarSection: (key) => {
+    const current = get().settings.sidebarSections;
+    get().patchSettings({
+      sidebarSections: { ...current, [key]: !current[key] },
+    });
+  },
   setTweaksOpen: (tweaksOpen) => set({ tweaksOpen }),
   patchSettings: (p) => {
     const next: Settings = { ...get().settings, ...p };

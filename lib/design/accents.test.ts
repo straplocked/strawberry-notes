@@ -41,6 +41,7 @@ describe('accents', () => {
       sidebarHidden: false,
       sidebarWidth: 232,
       noteListWidth: 300,
+      sidebarSections: { library: false, time: false, folders: false, tags: false },
     });
   });
 });

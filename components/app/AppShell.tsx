@@ -50,6 +50,7 @@ export function AppShell() {
     setSearch,
     settings,
     setTheme,
+    toggleSidebarSection,
   } = useUIStore();
 
   const isMobile = useIsMobile();
@@ -174,7 +175,7 @@ export function AppShell() {
 
   const activeNote = noteQ.data ?? null;
   const activeNoteFolder = useMemo(
-    () => (activeNote ? folders.find((f) => f.id === activeNote.folderId) ?? null : null),
+    () => (activeNote ? (folders.find((f) => f.id === activeNote.folderId) ?? null) : null),
     [activeNote, folders],
   );
   const activeNoteTags = useMemo(
@@ -501,6 +502,8 @@ export function AppShell() {
       fullWidth={isMobile}
       alwaysShowFolderActions={isMobile}
       isAdmin={isAdmin}
+      collapsedSections={settings.sidebarSections}
+      onToggleSection={toggleSidebarSection}
     />
   ) : null;
 
@@ -599,9 +602,7 @@ export function AppShell() {
         open={confirmState?.kind === 'folder'}
         title="Delete folder?"
         message={
-          confirmState?.kind === 'folder'
-            ? folderDeleteMessage(confirmState.folder, folders)
-            : ''
+          confirmState?.kind === 'folder' ? folderDeleteMessage(confirmState.folder, folders) : ''
         }
         confirmLabel="Delete folder"
         destructive
