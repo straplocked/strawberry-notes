@@ -38,6 +38,7 @@ For decision-makers and stakeholders. Product overview, stack rationale, roadmap
 | API reference               | [technical/api-reference.md](technical/api-reference.md)                   |
 | Database schema + pgvector  | [technical/database.md](technical/database.md)                             |
 | MCP server + agent tools    | [technical/mcp.md](technical/mcp.md)                                       |
+| Private Notes (per-note E2EE) | [technical/private-notes.md](technical/private-notes.md)                 |
 | Browser web clipper (MV3)   | [technical/extension.md](technical/extension.md)                           |
 | Wiki-links & backlinks      | [technical/editor.md](technical/editor.md)                                 |
 | Outbound webhooks (v1.4)    | [technical/webhooks.md](technical/webhooks.md)                             |

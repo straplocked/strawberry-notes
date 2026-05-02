@@ -176,6 +176,28 @@ Non-bloat budget for Tier 2: zero new runtime deps. One new GitHub Actions workf
 
 ---
 
+## v1.5 — Private Notes (shipped 2026-05-02)
+
+The headline tension that drove this slice: shipping a first-class MCP integration means anything in the workspace is one `search_semantic` call away from being copied into an LLM's context. Most notes are fine with that — but a journal entry, a list of medications, or a draft of a sensitive email isn't. **Private Notes** is the per-note opt-in lever that gives users a place to put those.
+
+The feature ships as four PRs ([#50](https://github.com/straplocked/strawberry-notes/pull/50), [#54](https://github.com/straplocked/strawberry-notes/pull/54), [#55](https://github.com/straplocked/strawberry-notes/pull/55), and the docs PR you're reading). User-facing copy never says "E2EE" — the threat model is narrower than vault-style products and we don't want to overclaim.
+
+**What lands:**
+
+- **Per-note opt-in encryption.** Editor toolbar gets a 🔒 lock toggle. Toggling on encrypts the body client-side with AES-256-GCM and saves the ciphertext + IV envelope; the server clears `contentText` / `snippet` / `hasImage` / `embeddingStale` for the row.
+- **Crypto envelope.** PBKDF2-SHA-256 @ 600 000 iterations derives a KEK from the user's passphrase, which wraps a 32-byte random Note Master Key (NMK). A separate KEK derived from a one-time recovery code wraps the same NMK. Both wraps live in a new `user_encryption` table; the server never sees the passphrase, the recovery code, or the unwrapped NMK. WebCrypto-native — **zero new runtime deps**.
+- **Recovery model.** Recovery code shown once at setup, gated behind a typed-confirmation modal. Lose both the passphrase and the code = lose the bodies, full stop.
+- **MCP / clipper invisibility.** Every read tool (`list_notes`, `search_notes`, `search_semantic`, `get_note`, `get_backlinks`, `export_note_markdown`) and the bearer-supporting `/api/notes/search/semantic` route pass `{ includePrivate: false }` into the service layer. Bearer callers see no private rows and get `not found` for any private note id. The token-mint UI surfaces this contract.
+- **Settings → Privacy panel.** Set up / unlock / lock-now / change passphrase / regenerate recovery code / disable. Auto-lock minutes (default 60) is user-tunable. Cross-tab sync via `BroadcastChannel`; tab-close locks via `pagehide`.
+- **Workspace export.** Private notes serialise as `notes/<title>-<id>.encrypted.json` envelopes alongside a top-level `README.txt` explaining decrypt is impossible without the user's passphrase or recovery code.
+- **Operator at-rest guidance.** New "Database at rest" section in [../technical/deployment.md](../technical/deployment.md) covering LUKS / EBS / Synology / Unraid native volume encryption + an encrypted-backup recipe. Private Notes protects sensitive bodies from the operator and from MCP; disk encryption protects everything else from stolen disks and leaked backups.
+
+Non-bloat justification: zero new runtime deps; one new table (`user_encryption`); one new column (`notes.encryption`); one new lib module (`lib/crypto/private-notes.ts` + a small client store); one new Settings panel; one new doc. Backend gating threads a single `includePrivate` flag through existing service-layer functions — no parallel "private notes service" to maintain.
+
+Threat model + full implementation map in [../technical/private-notes.md](../technical/private-notes.md).
+
+---
+
 See [../../CHANGELOG.md](../CHANGELOG.md) for per-doc-refresh history; `git log` for per-code-change history.
 
 ---
@@ -187,7 +209,7 @@ These are **not** coming. Saying no keeps the product small.
 - **Shared notes / collaboration / real-time co-editing.** Would require CRDTs (Yjs) or OT, plus a permission model, plus a sharing UI. Out of scope — different product.
 - **Organisations / tenants / role-based access control.** The single-user-per-account model is the whole point.
 - **SSO / OAuth / SAML.** Self-hosters who need SSO deploy behind an identity-aware proxy (Authelia, Pomerium, Cloudflare Zero Trust). The app doesn't need to know.
-- **End-to-end encryption.** Postgres sees plaintext. Users who need E2EE are better served by a product that's E2EE from the ground up.
+- **Full-workspace E2EE by default.** Postgres still sees plaintext for the default note experience. Per-note opt-in encryption ships in v1.5 — see [Private Notes](#v15--private-notes-shipped-2026-05-02). Users who want every note encrypted client-side from the moment of creation are better served by a product that's E2EE from the ground up (Standard Notes, Joplin with E2EE).
 - **Native mobile apps.** PWA install is the mobile story.
 - **Plugin system / extension API.** The web clipper is a *consumer* of the existing API, not a plugin surface. Adding a plugin model would double the surface for marginal benefit.
 - **Telemetry / analytics / crash reporting.** The code doesn't phone home and won't.

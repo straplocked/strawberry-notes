@@ -257,6 +257,43 @@ See [../technical/mcp.md](../technical/mcp.md) for the full tool list and a Clau
 
 Tokens carry the same access as your password — treat them that way, and revoke any you aren't using.
 
+**Private Notes are invisible to MCP clients and the web clipper.** See the next section.
+
+---
+
+## Private Notes
+
+A note you mark **Private** is encrypted in your browser before saving. The server can't read it, the operator can't read it, your MCP-connected AI assistants can't read it, and the web clipper can't read it. The only thing that can decrypt a private note is your passphrase (or your one-time recovery code) running in your own browser.
+
+This is the lever to pull when you want a place to put things you don't want surfaced by an LLM that has your access token. A journal entry, a list of medications, a draft of a sensitive email — anything you'd rather an agent didn't quietly index and quote back at you.
+
+**One-time setup:**
+
+1. Open **Settings → Private Notes**.
+2. Click **Set up Private Notes** and choose a passphrase. Longer is stronger.
+3. **Save the recovery code that appears.** It's the only safety net if you forget the passphrase. The setup flow won't let you continue until you confirm you've stored it. A password manager is the obvious place.
+
+**Marking a note private:**
+
+In any note, click the 🔒 button in the editor toolbar. The next save encrypts the body. The note still appears in your sidebar, the title and folder remain visible, and the note list shows a 🔒 next to its title — but the body shows "🔒 Private — unlock to read" until you unlock.
+
+**Unlocking:**
+
+Open a private note while locked → you see an Unlock button. Enter your passphrase. The note decrypts in the editor for the rest of your session, until you lock manually (Settings → Lock now), close the tab, or hit the auto-lock timer (60 minutes of inactivity by default; change it in Settings).
+
+**Reverting a note to plaintext:**
+
+Click 🔓 in the editor toolbar while unlocked. You'll be asked to confirm — once it's plaintext again, MCP and the clipper can see the body again, the operator can `psql` for it, and it gets indexed for full-text and semantic search like any other note.
+
+**Important warnings:**
+
+- **If you lose both your passphrase and your recovery code, your private notes are unrecoverable.** No one — not the operator, not Strawberry Notes, not anyone — can decrypt them. The keys live only on your devices.
+- A private note's title, folder placement, and tags are still visible to the operator and to MCP. Only the body is encrypted. Don't put secrets in the title.
+- Search inside private notes doesn't work — the encrypted body isn't indexable. You can find a private note by its title; you can't search for a phrase inside one.
+- Wiki-links from private notes don't work either — the body is encrypted, so the server can't extract `[[Title]]` references. Plaintext notes linking to a private note's title still resolve normally.
+
+What this defends against and what it does **not** is documented in detail in [../technical/private-notes.md](../technical/private-notes.md). The short version: it stops MCP and casual operator inspection cold; it does not stop a malicious operator who can swap the JavaScript bundle the browser runs.
+
 ---
 
 ## Keyboard Shortcuts

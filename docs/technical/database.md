@@ -62,6 +62,7 @@ native check for cycles in a recursive FK.
 | `trashedAt`   | `timestamptz?`| NULL unless soft-deleted                                 |
 | `contentEmbedding` | `vector(N)` | pgvector embedding; populated by the worker. `N = EMBEDDING_DIMS`. |
 | `embeddingStale`   | `boolean`   | True until the worker has embedded the current content. Set on every content/title edit. |
+| `encryption`  | `jsonb?`      | **Private Notes** envelope `{ v: 1, iv: <base64-12-bytes> }`. NULL for plaintext notes. When non-null, `content` holds the base64 AES-256-GCM ciphertext (a JSON string literal) instead of a ProseMirror doc, and `contentText` / `snippet` / `hasImage` / `contentEmbedding` are forced empty by the service layer. The wrapped key lives in `user_encryption`. See [private-notes.md](private-notes.md). |
 | `createdAt`   | `timestamptz` |                                                          |
 | `updatedAt`   | `timestamptz` | bumped on every PATCH                                    |
 
@@ -72,6 +73,7 @@ Indexes:
 - `notes_content_tsv_idx` — GIN over the `content_tsv` generated tsvector column. See [Full-text search](#full-text-search) below.
 - `notes_title_trgm_idx` — GIN over `title` using `gin_trgm_ops` (pg_trgm). Speeds the `[[`-autocomplete ILIKE substring scan into the thousands of notes per user.
 - `notes_content_embedding_idx` — IVFFlat on `content_embedding` with `vector_cosine_ops`. Only populated when the feature is configured.
+- `notes_encryption_idx` — partial index on `(encryption IS NOT NULL) WHERE encryption IS NOT NULL`. Backs the bearer-token (MCP / clipper) negative filter; most rows are plaintext so the partial form keeps the index small.
 
 ### `tags`
 
@@ -176,6 +178,21 @@ Index: `password_reset_tokens_user_idx` on `(userId)`. Stale rows (expired or us
 | `createdAt`           | `timestamptz`   |                                                                                        |
 
 Index: `webhooks_user_idx` on `(userId)`. See [webhooks.md](webhooks.md) for the delivery contract and event payloads.
+
+### `user_encryption`
+
+Holds the wrapped Note Master Key for a user who has set up Private Notes. Lazy-created the first time a user clicks "Set up Private Notes" in Settings → Privacy. Dropped via DELETE on the same panel — but only after the user has migrated every private note back to plaintext (the route refuses with 409 otherwise).
+
+| Column            | Type           | Notes                                                                                  |
+| ----------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `userId`          | `uuid` PK + FK | → `users.id` ON DELETE CASCADE                                                          |
+| `version`         | `integer`      | Wrap-format schema version. Currently always `1`.                                       |
+| `passphraseWrap`  | `jsonb`        | `{ v, kdf, iters, salt, iv, ct }` — passphrase-derived KEK wrapping the NMK.           |
+| `recoveryWrap`    | `jsonb`        | Same shape, recovery-code-derived KEK. Either wrap independently unwraps the NMK.       |
+| `createdAt`       | `timestamptz`  |                                                                                        |
+| `updatedAt`       | `timestamptz`  | bumped on passphrase rotation or recovery-code regeneration                            |
+
+The server has neither the passphrase nor the recovery code, so it cannot unwrap either blob. See [private-notes.md](private-notes.md) for the full crypto envelope and threat model.
 
 ---
 

@@ -23,7 +23,7 @@ This is the v1.4 Tier 1.1 feature; see [../leadership/roadmap.md](../leadership/
 ### Why these five and not more
 
 - **`note.tagged` is asymmetric.** No `note.untagged`. Integrations almost always care about *gaining* a label ("post to Slack when something becomes #blog"); losing one is rarely actionable.
-- **`note.linked` only fires on first resolve.** A re-save with no link changes is silent. A title rename that re-resolves a previously-unresolved `[[Title]]` does fire. The `(source, target)` ordering is "which note holds the `[[…]]`" → "which note it points at".
+- **`note.linked` only fires on first resolve.** A re-save with no link changes is silent. A title rename that re-resolves a previously-unresolved `[[Title]]` does fire. The `(source, target)` ordering is "which note holds the `[[…]]`" → "which note it points at". **Private Notes** (see [private-notes.md](private-notes.md)) cannot be link sources — server-side wiki-link extraction is skipped on every private write — so `note.linked(source=<private>, ...)` never fires. A *plaintext* note linking to a private one's title resolves and fires normally; the title stays plaintext.
 - **No `note.purged` (hard-delete).** Hard-delete is rare and operator-driven. If an integration needs to garbage-collect mirrored state when a note is gone, polling the trash view is sufficient.
 - **No scheduled events.** `digest.daily` and similar would require a scheduler — deferred to v1.4+ as "inbound triggers / scheduled events" on the candidate list. Outbound first; inbound on demand.
 

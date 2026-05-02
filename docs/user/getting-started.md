@@ -82,6 +82,7 @@ Shortcut: type Markdown-like syntax and it expands. `#␣` → heading; `*␣` �
 - **Put notes in folders** — drag a note onto a folder, or pick the folder from the note's metadata header.
 - **Tag notes** — add comma-separated tags in the note header. Tags are lowercased and deduplicated automatically.
 - **Pin important notes** — click the pin icon on a note; it floats to the top of every view.
+- **Mark sensitive notes Private** — Settings → Private Notes → Set up. Then click 🔒 in the editor toolbar on any note that shouldn't be visible to MCP-connected AI assistants or the web clipper. See [features.md#private-notes](features.md#private-notes) for the trade-offs.
 
 See [features.md](features.md) for the details.
 

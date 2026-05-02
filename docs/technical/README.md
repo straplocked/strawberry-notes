@@ -16,6 +16,7 @@ Audience: engineers extending, operating, or reviewing Strawberry Notes.
 | [mcp.md](mcp.md)                           | MCP server at `/api/mcp`, personal access tokens, tool reference.     |
 | [extension.md](extension.md)               | MV3 browser web clipper (`extension/`), install, CORS, auth.          |
 | [webhooks.md](webhooks.md)                 | Outbound webhooks: events, signing, retries, dead-letter (v1.4).      |
+| [private-notes.md](private-notes.md)       | Per-note opt-in E2EE (v1.5): crypto envelope, threat model, recovery. |
 
 ---
 
