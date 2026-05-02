@@ -44,7 +44,9 @@ export const vector = customType<{ data: number[]; driverData: string }>({
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
+  // Nullable: OIDC-only and proxy-mode users have no local password.
+  // The credentials provider rejects sign-in when this is null.
+  passwordHash: text('password_hash'),
   // When `REQUIRE_EMAIL_CONFIRMATION` is set, signup creates the row with
   // `emailConfirmedAt = null`; the credentials provider rejects sign-in
   // until a confirm-email link has been clicked. Operator-created accounts
@@ -58,8 +60,41 @@ export const users = pgTable('users', {
   // When non-null, the credentials provider rejects sign-in. Set/cleared
   // by an admin from /admin/users; never written by self-service flows.
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  // TOTP enrollment. Null secret = not enrolled. The credentials provider
+  // short-circuits with an MFA ticket cookie when this is non-null; the
+  // separate `totp` provider then exchanges the ticket + a verified code
+  // for a session.
+  totpSecret: text('totp_secret'),
+  totpEnrolledAt: timestamp('totp_enrolled_at', { withTimezone: true }),
+  // Single-use recovery codes — array of `{ hash, usedAt }` objects where
+  // hash is bcrypt(code). Null until enrolled.
+  totpRecoveryCodes: jsonb('totp_recovery_codes'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// OIDC account links. One row per `(provider, subject)` — the IdP's stable
+// `sub` claim is the only identifier we trust as a primary key into the
+// external user. Email can change on the IdP side; subject cannot. Linking
+// rules live in lib/auth/oidc-link.ts.
+export const oidcAccounts = pgTable(
+  'oidc_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Reserved for future multi-IdP. Defaults to 'oidc' for the single
+    // configured issuer.
+    provider: text('provider').notNull().default('oidc'),
+    subject: text('subject').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  },
+  (t) => ({
+    userIdx: index('oidc_accounts_user_idx').on(t.userId),
+    providerSubjectUq: unique('oidc_accounts_provider_subject_uq').on(t.provider, t.subject),
+  }),
+);
 
 // `parentId` references `folders.id` for self-nesting. `ON DELETE CASCADE`
 // means deleting a parent folder removes the entire subtree of folders, and
@@ -321,3 +356,4 @@ export type Webhook = InferSelectModel<typeof webhooks>;
 export type PasswordResetToken = InferSelectModel<typeof passwordResetTokens>;
 export type EmailConfirmation = InferSelectModel<typeof emailConfirmations>;
 export type UserEmailPreferences = InferSelectModel<typeof userEmailPreferences>;
+export type OidcAccount = InferSelectModel<typeof oidcAccounts>;

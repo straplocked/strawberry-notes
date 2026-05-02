@@ -85,6 +85,13 @@
       "when": 1777721263674,
       "tag": "0011_loose_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1777733136160,
+      "tag": "0012_tearful_black_panther",
+      "breakpoints": true
     }
   ]
 }

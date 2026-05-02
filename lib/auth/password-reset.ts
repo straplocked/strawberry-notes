@@ -68,8 +68,14 @@ export async function issuePasswordResetTokenForEmail(
 ): Promise<IssuedResetToken | null> {
   const email = rawEmail.trim().toLowerCase();
   if (!email) return null;
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+  const [user] = await db
+    .select({ id: users.id, passwordHash: users.passwordHash })
+    .from(users)
+    .where(eq(users.email, email));
   if (!user) return null;
+  // OIDC-only / proxy-only users have no password to reset. Pretend the
+  // address didn't match so we don't leak credential mode to the requester.
+  if (!user.passwordHash) return null;
 
   const now = opts.now ?? new Date();
   const expiresAt = new Date(now.getTime() + (opts.ttlMs ?? DEFAULT_TTL_MS));

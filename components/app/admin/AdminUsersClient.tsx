@@ -8,6 +8,7 @@ interface AdminUserRow {
   role: 'user' | 'admin';
   disabledAt: string | null;
   emailConfirmedAt: string | null;
+  totpEnrolledAt: string | null;
   createdAt: string;
 }
 
@@ -243,6 +244,13 @@ export function AdminUsersClient({ currentUserId }: { currentUserId: string }) {
       setNewResult({ email: u.email, password: res.password });
     });
 
+  const onResetTotp = (u: AdminUserRow) => {
+    if (!window.confirm(`Clear 2FA enrollment for ${u.email}?`)) return;
+    void action(u.id, () =>
+      api(`/api/admin/users/${u.id}/reset-totp`, { method: 'POST' }),
+    );
+  };
+
   const onDelete = (u: AdminUserRow) => {
     if (!window.confirm(`Delete ${u.email}? This removes all their notes too. Cannot be undone.`)) {
       return;
@@ -289,6 +297,7 @@ export function AdminUsersClient({ currentUserId }: { currentUserId: string }) {
               <th style={styles.th}>Email</th>
               <th style={styles.th}>Role</th>
               <th style={styles.th}>Status</th>
+              <th style={styles.th}>2FA</th>
               <th style={styles.th}>Created</th>
               <th style={{ ...styles.th, textAlign: 'right' }}></th>
             </tr>
@@ -318,6 +327,13 @@ export function AdminUsersClient({ currentUserId }: { currentUserId: string }) {
                     <span style={pillStyle(status)}>{status}</span>
                   </td>
                   <td style={{ ...styles.td, color: 'var(--ink-3)', fontSize: 12 }}>
+                    {u.totpEnrolledAt ? (
+                      <span style={pillStyle('active')}>enrolled</span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
+                  <td style={{ ...styles.td, color: 'var(--ink-3)', fontSize: 12 }}>
                     {fmt(u.createdAt)}
                   </td>
                   <td style={styles.td}>
@@ -330,6 +346,17 @@ export function AdminUsersClient({ currentUserId }: { currentUserId: string }) {
                       >
                         Reset pw
                       </button>
+                      {u.totpEnrolledAt && (
+                        <button
+                          style={styles.btnGhost}
+                          onClick={() => onResetTotp(u)}
+                          disabled={busy === u.id}
+                          type="button"
+                          title="Clear the user's 2FA enrollment"
+                        >
+                          Reset 2FA
+                        </button>
+                      )}
                       <button
                         style={styles.btnGhost}
                         onClick={() => onPromote(u)}
