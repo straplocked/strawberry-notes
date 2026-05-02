@@ -25,7 +25,7 @@ import type { FolderDTO, FolderView, TagDTO, TimeRange } from '@/lib/types';
 
 const styles: Record<string, CSSProperties> = {
   root: {
-    width: 232,
+    width: 'var(--sn-sidebar-width, 232px)',
     flexShrink: 0,
     background: 'var(--surface-2)',
     borderRight: '1px solid var(--hair)',

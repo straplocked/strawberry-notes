@@ -26,6 +26,10 @@ export interface Settings {
   accent: AccentId;
   density: Density;
   sidebarHidden: boolean;
+  /** Desktop sidebar width in px. Mobile ignores this. */
+  sidebarWidth: number;
+  /** Desktop note-list width in px. Mobile ignores this. */
+  noteListWidth: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -33,7 +37,16 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: 'strawberry',
   density: 'balanced',
   sidebarHidden: false,
+  sidebarWidth: 232,
+  noteListWidth: 300,
 };
+
+/** Min/max bounds the resize handles enforce. Source of truth for both
+ * the runtime drag clamps and any docs / tests asserting bounds. */
+export const PANE_BOUNDS = {
+  sidebar: { min: 180, max: 360, default: 232 },
+  list: { min: 240, max: 520, default: 300 },
+} as const;
 
 export function accentById(id: AccentId): Accent {
   return ACCENTS.find((a) => a.id === id) ?? ACCENTS[0];
