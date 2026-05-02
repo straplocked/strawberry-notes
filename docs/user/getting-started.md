@@ -32,6 +32,8 @@ docker compose exec app npm run user:reset -- you@example.com
 
 …which prints a fresh password.
 
+> **Operators / admins.** The first account on the instance is the bootstrap admin and gains a **users icon** in the sidebar footer (and an "Admin · users" entry in the mobile menu) that opens `/admin/users`. From there you can add, disable, promote, reset, and remove other users without leaving the browser. The CLI commands above keep working for emergencies and for promoting more admins (`npm run user:promote -- email`).
+
 ---
 
 ## 2. The three-pane layout

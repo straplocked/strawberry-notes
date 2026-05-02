@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import type { Editor as TiptapEditor } from '@tiptap/react';
 import { timeRangeLabel } from '@/lib/notes/time-range';
 import { Sidebar } from './Sidebar';
@@ -13,7 +13,7 @@ import { MobileTopBar, type MobilePane } from './MobileTopBar';
 import { PaneResizer } from './PaneResizer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ActionSheet, type ActionSheetAction } from './ActionSheet';
-import { IconCog, IconLogout, IconMoon, IconSun } from '@/components/icons';
+import { IconCog, IconLogout, IconMoon, IconSun, IconUsers } from '@/components/icons';
 import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
@@ -39,6 +39,8 @@ type ConfirmState =
 
 export function AppShell() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'admin';
   const {
     view,
     setView,
@@ -427,7 +429,7 @@ export function AppShell() {
 
   const mobileMenuActions: ActionSheetAction[] = useMemo(() => {
     const close = () => setMobileMenuOpen(false);
-    return [
+    const acts: ActionSheetAction[] = [
       {
         id: 'settings',
         label: 'Settings',
@@ -437,6 +439,19 @@ export function AppShell() {
           router.push('/settings');
         },
       },
+    ];
+    if (isAdmin) {
+      acts.push({
+        id: 'admin',
+        label: 'Admin · users',
+        icon: <IconUsers size={18} />,
+        onSelect: () => {
+          close();
+          router.push('/admin/users');
+        },
+      });
+    }
+    acts.push(
       {
         id: 'theme',
         label: settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
@@ -455,9 +470,10 @@ export function AppShell() {
           void onSignOut();
         },
       },
-    ];
+    );
+    return acts;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.theme, router, setTheme]);
+  }, [settings.theme, router, setTheme, isAdmin]);
 
   // Desktop keeps `sidebarHidden`; on mobile we always keep Sidebar mounted
   // under the 'folders' pane, so the setting doesn't apply.
@@ -484,6 +500,7 @@ export function AppShell() {
       onMoveNoteToFolder={onMoveNoteToFolder}
       fullWidth={isMobile}
       alwaysShowFolderActions={isMobile}
+      isAdmin={isAdmin}
     />
   ) : null;
 
