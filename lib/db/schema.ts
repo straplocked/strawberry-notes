@@ -50,6 +50,14 @@ export const users = pgTable('users', {
   // until a confirm-email link has been clicked. Operator-created accounts
   // (`npm run user:create`) come pre-confirmed.
   emailConfirmedAt: timestamp('email_confirmed_at', { withTimezone: true }),
+  // 'user' (default) | 'admin'. Admins can manage other users via /admin/users
+  // and the `npm run user:promote` / `user:demote` CLIs. The first user in
+  // the table (by createdAt ASC) is bootstrapped as admin in the migration;
+  // on a fresh install the first sign-in auto-promotes when no admin exists.
+  role: text('role').notNull().default('user'),
+  // When non-null, the credentials provider rejects sign-in. Set/cleared
+  // by an admin from /admin/users; never written by self-service flows.
+  disabledAt: timestamp('disabled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
