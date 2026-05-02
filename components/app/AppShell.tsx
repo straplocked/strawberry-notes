@@ -10,6 +10,7 @@ import { NoteList } from './NoteList';
 import { Editor } from './Editor';
 import { TweaksPanel } from './Tweaks';
 import { MobileTopBar, type MobilePane } from './MobileTopBar';
+import { PaneResizer } from './PaneResizer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ActionSheet, type ActionSheetAction } from './ActionSheet';
 import { IconCog, IconLogout, IconMoon, IconSun } from '@/components/icons';
@@ -566,7 +567,9 @@ export function AppShell() {
   ) : (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
       {sidebarEl}
+      {showSidebar && <PaneResizer side="sidebar" />}
       {noteListEl}
+      <PaneResizer side="list" />
       {editorEl}
     </div>
   );

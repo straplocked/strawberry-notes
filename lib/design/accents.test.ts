@@ -39,6 +39,8 @@ describe('accents', () => {
       accent: 'strawberry',
       density: 'balanced',
       sidebarHidden: false,
+      sidebarWidth: 232,
+      noteListWidth: 300,
     });
   });
 });

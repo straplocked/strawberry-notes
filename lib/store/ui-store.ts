@@ -44,6 +44,18 @@ export function applyThemeVars({ theme, accent }: Pick<Settings, 'theme' | 'acce
   root.style.setProperty('--berry-soft', theme === 'dark' ? a.softDark : a.soft);
 }
 
+/** Set the pane-width CSS vars Sidebar/NoteList consume so resize is
+ * one source of truth between layout-init script and runtime settings. */
+export function applyLayoutVars({
+  sidebarWidth,
+  noteListWidth,
+}: Pick<Settings, 'sidebarWidth' | 'noteListWidth'>) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.style.setProperty('--sn-sidebar-width', `${sidebarWidth}px`);
+  root.style.setProperty('--sn-list-width', `${noteListWidth}px`);
+}
+
 interface UIState {
   view: FolderView;
   activeNoteId: string | null;
@@ -81,6 +93,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     const next: Settings = { ...get().settings, ...p };
     persistSettings(next);
     applyThemeVars(next);
+    applyLayoutVars(next);
     set({ settings: next });
   },
 }));
@@ -89,5 +102,6 @@ export const useUIStore = create<UIState>((set, get) => ({
 export function hydrateSettingsFromStorage() {
   const s = loadSettings();
   applyThemeVars(s);
+  applyLayoutVars(s);
   useUIStore.setState({ settings: s });
 }

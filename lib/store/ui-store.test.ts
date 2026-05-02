@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../design/accents';
-import { applyThemeVars, hydrateSettingsFromStorage, useUIStore } from './ui-store';
+import {
+  applyLayoutVars,
+  applyThemeVars,
+  hydrateSettingsFromStorage,
+  useUIStore,
+} from './ui-store';
 
 function resetStore() {
   useUIStore.setState({
@@ -77,11 +82,26 @@ describe('applyThemeVars', () => {
   });
 });
 
+describe('applyLayoutVars', () => {
+  it('sets pane-width CSS custom properties', () => {
+    applyLayoutVars({ sidebarWidth: 250, noteListWidth: 380 });
+    expect(document.documentElement.style.getPropertyValue('--sn-sidebar-width')).toBe('250px');
+    expect(document.documentElement.style.getPropertyValue('--sn-list-width')).toBe('380px');
+  });
+});
+
 describe('hydrateSettingsFromStorage', () => {
   it('reads previously persisted settings', () => {
     window.localStorage.setItem(
       'sn-settings',
-      JSON.stringify({ theme: 'light', accent: 'ink', density: 'comfy', sidebarHidden: true }),
+      JSON.stringify({
+        theme: 'light',
+        accent: 'ink',
+        density: 'comfy',
+        sidebarHidden: true,
+        sidebarWidth: 260,
+        noteListWidth: 340,
+      }),
     );
     hydrateSettingsFromStorage();
     expect(useUIStore.getState().settings).toEqual({
@@ -89,8 +109,12 @@ describe('hydrateSettingsFromStorage', () => {
       accent: 'ink',
       density: 'comfy',
       sidebarHidden: true,
+      sidebarWidth: 260,
+      noteListWidth: 340,
     });
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(document.documentElement.style.getPropertyValue('--sn-sidebar-width')).toBe('260px');
+    expect(document.documentElement.style.getPropertyValue('--sn-list-width')).toBe('340px');
   });
 
   it('falls back to defaults when storage is empty', () => {
@@ -111,5 +135,8 @@ describe('hydrateSettingsFromStorage', () => {
     expect(s.accent).toBe('jam');
     expect(s.theme).toBe(DEFAULT_SETTINGS.theme);
     expect(s.density).toBe(DEFAULT_SETTINGS.density);
+    // Old payloads without the new width fields fall back to defaults.
+    expect(s.sidebarWidth).toBe(DEFAULT_SETTINGS.sidebarWidth);
+    expect(s.noteListWidth).toBe(DEFAULT_SETTINGS.noteListWidth);
   });
 });

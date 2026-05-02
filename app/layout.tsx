@@ -75,6 +75,10 @@ const themeInit = `
     r.style.setProperty('--berry', a.hex);
     r.style.setProperty('--berry-ink', a.ink);
     r.style.setProperty('--berry-soft', theme === 'dark' ? a.softDark : a.soft);
+    var sw = typeof s.sidebarWidth === 'number' && s.sidebarWidth > 0 ? s.sidebarWidth : 232;
+    var lw = typeof s.noteListWidth === 'number' && s.noteListWidth > 0 ? s.noteListWidth : 300;
+    r.style.setProperty('--sn-sidebar-width', sw + 'px');
+    r.style.setProperty('--sn-list-width', lw + 'px');
   } catch (e) {}
 })();
 `;

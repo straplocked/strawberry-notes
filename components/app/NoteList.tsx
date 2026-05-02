@@ -11,7 +11,7 @@ import type { NoteListItemDTO, TagDTO } from '@/lib/types';
 
 const styles: Record<string, CSSProperties> = {
   root: {
-    width: 300,
+    width: 'var(--sn-list-width, 300px)',
     flexShrink: 0,
     background: 'var(--surface)',
     borderRight: '1px solid var(--hair)',
