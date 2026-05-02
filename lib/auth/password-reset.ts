@@ -107,7 +107,7 @@ export type ConsumeResult =
 export async function consumePasswordResetToken(
   rawToken: string,
   newPassword: string,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; baseUrl?: string } = {},
 ): Promise<ConsumeResult> {
   if (!rawToken || !rawToken.startsWith(TOKEN_PREFIX)) {
     return { ok: false, reason: 'invalid' };
@@ -143,7 +143,11 @@ export async function consumePasswordResetToken(
     const passwordHash = await bcryptHash(newPassword, 10);
     await tx.update(users).set({ passwordHash }).where(eq(users.id, row.userId));
 
-    void notifyPasswordChanged(row.userId, { source: 'self-service reset', changedAt: now });
+    void notifyPasswordChanged(row.userId, {
+      source: 'self-service reset',
+      changedAt: now,
+      baseUrl: opts.baseUrl,
+    });
 
     return { ok: true, userId: row.userId };
   });

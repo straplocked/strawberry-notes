@@ -60,6 +60,16 @@ describe('notifyPasswordChanged', () => {
     expect(msg.subject).toMatch(/password was changed/);
   });
 
+  it('uses ctx.baseUrl when provided (request-derived host wins over env)', async () => {
+    notifyPasswordChanged('user-1', {
+      source: 'self-service reset',
+      baseUrl: 'http://192.168.1.50:3200',
+    });
+    await flush();
+    const msg = sendMailMock.mock.calls[0][0];
+    expect(msg.text).toContain('http://192.168.1.50:3200/login');
+  });
+
   it('skips when SMTP is not configured', async () => {
     isConfiguredMock.mockReturnValue(false);
     notifyPasswordChanged('user-1', { source: 'x' });
@@ -91,6 +101,17 @@ describe('notifyTokenCreated', () => {
     expect(msg.text).toContain('Claude');
     expect(msg.text).toContain('snb_abcd1234');
   });
+
+  it('threads ctx.baseUrl into the settings link', async () => {
+    notifyTokenCreated('user-1', {
+      tokenName: 'Claude',
+      tokenPrefix: 'snb_abcd1234',
+      baseUrl: 'http://192.168.1.50:3200',
+    });
+    await flush();
+    const msg = sendMailMock.mock.calls[0][0];
+    expect(msg.text).toContain('http://192.168.1.50:3200/settings');
+  });
 });
 
 describe('notifyWebhookCreated', () => {
@@ -103,6 +124,18 @@ describe('notifyWebhookCreated', () => {
     await flush();
     const msg = sendMailMock.mock.calls[0][0];
     expect(msg.text).toContain('note.created, note.tagged');
+  });
+
+  it('threads ctx.baseUrl into the settings link', async () => {
+    notifyWebhookCreated('user-1', {
+      webhookName: 'n8n',
+      webhookUrl: 'https://hooks.example.com/x',
+      events: ['note.created'],
+      baseUrl: 'http://192.168.1.50:3200',
+    });
+    await flush();
+    const msg = sendMailMock.mock.calls[0][0];
+    expect(msg.text).toContain('http://192.168.1.50:3200/settings');
   });
 });
 
@@ -118,5 +151,19 @@ describe('notifyWebhookDeadLetter', () => {
     const msg = sendMailMock.mock.calls[0][0];
     expect(msg.subject).toContain('5 consecutive failures');
     expect(msg.text).toContain('HTTP 503');
+  });
+
+  it('falls back to env/localhost when no baseUrl is provided (worker context)', async () => {
+    // Worker contexts have no incoming request — the fallback path must still
+    // produce a usable link rather than throwing.
+    notifyWebhookDeadLetter('user-1', {
+      webhookName: 'n8n',
+      webhookUrl: 'https://hooks.example.com/x',
+      consecutiveFailures: 5,
+      lastError: 'HTTP 503',
+    });
+    await flush();
+    const msg = sendMailMock.mock.calls[0][0];
+    expect(msg.text).toMatch(/https?:\/\/[^/]+\/settings/);
   });
 });

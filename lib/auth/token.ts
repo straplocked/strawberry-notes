@@ -26,7 +26,16 @@ function hash(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
 }
 
-export async function issueToken(userId: string, name: string): Promise<IssuedToken> {
+export interface IssueTokenOpts {
+  /** Base URL for the notification email link; usually `getPublicBaseUrl(req)`. */
+  baseUrl?: string;
+}
+
+export async function issueToken(
+  userId: string,
+  name: string,
+  opts: IssueTokenOpts = {},
+): Promise<IssuedToken> {
   const body = randomBytes(TOKEN_BYTES).toString('hex');
   const token = `${TOKEN_PREFIX}${body}`;
   const prefix = token.slice(0, TOKEN_PREFIX.length + DISPLAY_PREFIX_LEN);
@@ -36,7 +45,11 @@ export async function issueToken(userId: string, name: string): Promise<IssuedTo
     .insert(apiTokens)
     .values({ userId, name: cleanName, prefix, tokenHash })
     .returning({ id: apiTokens.id });
-  void notifyTokenCreated(userId, { tokenName: cleanName, tokenPrefix: prefix });
+  void notifyTokenCreated(userId, {
+    tokenName: cleanName,
+    tokenPrefix: prefix,
+    baseUrl: opts.baseUrl,
+  });
   return { id: row.id, token, prefix };
 }
 

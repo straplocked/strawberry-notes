@@ -45,6 +45,33 @@ describe('passwordResetEmail', () => {
     expect(m.html).not.toContain('<b>Bad</b>');
     expect(m.html).toContain('&lt;script&gt;');
   });
+
+  it('renders the branded shell — preview text, brand colour, CTA, footer slug', () => {
+    const m = passwordResetEmail(base);
+    // Hidden preheader is present so Gmail / Apple Mail can surface it
+    expect(m.html).toContain('Reset your Strawberry Notes password — link expires in 1 hour.');
+    // Berry brand colour (Variant A primary) is in the CTA + plain-link fallback
+    expect(m.html).toMatch(/background-color:#e33d4e/);
+    expect(m.html).toContain('#b02537');
+    // CTA is a real anchor pointing at the reset URL
+    expect(m.html).toMatch(
+      /<a href="https:\/\/notes\.example\.com\/reset-password\?token=abc"[^>]*>Choose a new password<\/a>/,
+    );
+    // The branded shell carries the wordmark + a security caption + a footer slug
+    expect(m.html).toContain('Strawberry Notes');
+    expect(m.html).toContain('Account · Security');
+    expect(m.html).toContain('strawberrynotes.app');
+  });
+
+  it('keeps a hostile appName escaped inside the branded chrome', () => {
+    const m = passwordResetEmail({ ...base, appName: '<b>Bad</b>' });
+    // Header wordmark, body greeting, and footer slug all flow through esc()
+    expect(m.html).not.toContain('<b>Bad</b>');
+    expect(m.html).toContain('&lt;b&gt;Bad&lt;/b&gt;');
+    // Footer slug stays escaped too (lowercased + spaces stripped before esc)
+    expect(m.html).not.toMatch(/Sent from <b>bad<\/b>\.app/);
+    expect(m.html).toContain('&lt;b&gt;bad&lt;/b&gt;.app');
+  });
 });
 
 describe('emailConfirmationEmail', () => {

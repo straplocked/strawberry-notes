@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/auth/require';
 import { issueToken, listTokensForUser } from '@/lib/auth/token';
+import { getPublicBaseUrl } from '@/lib/http/public-url';
 import { rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 export async function GET() {
@@ -30,7 +31,9 @@ export async function POST(req: Request) {
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const issued = await issueToken(a.userId, parsed.data.name);
+  const issued = await issueToken(a.userId, parsed.data.name, {
+    baseUrl: getPublicBaseUrl(req),
+  });
   // The raw `token` is returned to the caller ONCE; only the hash is retained server-side.
   return NextResponse.json({
     id: issued.id,

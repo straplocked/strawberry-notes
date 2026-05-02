@@ -18,7 +18,8 @@
     "db:studio": "drizzle-kit studio",
     "db:embed": "tsx scripts/embed-backfill.ts",
     "user:create": "tsx scripts/create-user.ts",
-    "user:reset": "tsx scripts/reset-password.ts"
+    "user:reset": "tsx scripts/reset-password.ts",
+    "email:preview": "tsx scripts/preview-emails.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.2",

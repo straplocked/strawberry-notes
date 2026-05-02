@@ -6,6 +6,7 @@ import {
 } from '@/lib/auth/email-confirmation';
 import { isEmailConfigured, sendMail } from '@/lib/email/client';
 import { emailConfirmationEmail } from '@/lib/email/templates';
+import { getPublicBaseUrl } from '@/lib/http/public-url';
 import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 
 const Body = z.object({
@@ -49,8 +50,8 @@ export async function POST(req: Request) {
   if (!alreadyConfirmed) {
     const issued = await issueEmailConfirmationTokenForEmail(email);
     if (issued) {
-      const baseUrl = process.env.AUTH_URL?.trim() || 'http://localhost:3200';
-      const confirmUrl = `${baseUrl.replace(/\/+$/, '')}/confirm-email?token=${encodeURIComponent(issued.token)}`;
+      const baseUrl = getPublicBaseUrl(req);
+      const confirmUrl = `${baseUrl}/confirm-email?token=${encodeURIComponent(issued.token)}`;
       void sendMail(
         emailConfirmationEmail({
           to: email,

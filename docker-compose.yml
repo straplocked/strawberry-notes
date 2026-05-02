@@ -11,7 +11,10 @@ services:
     environment:
       DATABASE_URL: postgres://strawberry:${POSTGRES_PASSWORD:-strawberry}@postgres:5432/strawberry
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
-      AUTH_URL: ${AUTH_URL:-http://localhost:3200}
+      # Optional. When unset, email links and Auth.js callbacks auto-derive
+      # from the request host (LAN IP / X-Forwarded-Host). Set explicitly
+      # for production behind a TLS proxy that strips X-Forwarded-* headers.
+      AUTH_URL: ${AUTH_URL:-}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
       # Semantic search (optional). Leave EMBEDDING_ENDPOINT empty to disable.
       # Any provider that speaks OpenAI's `POST /v1/embeddings` shape works
