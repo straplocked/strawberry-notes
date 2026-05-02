@@ -16,6 +16,7 @@ import {
 import { createFolder, FolderError, listFolders, updateFolder } from '../notes/folder-service';
 import { listBacklinks } from '../notes/link-service';
 import { deleteTag, listTags, renameTag, TagError } from '../notes/tag-service';
+import type { PMDoc } from '../types';
 
 function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }] };
@@ -100,6 +101,13 @@ export function buildMcpServer(userId: string): McpServer {
     async ({ id }) => {
       const note = await getNote(userId, id);
       if (!note) return { ...textResult('not found'), isError: true };
+      // Private notes are content-free as far as MCP is concerned. Until the
+      // bearer-vs-session gating lands (PR 3) — which will ensure `getNote`
+      // never returns a private row to MCP at all — refuse explicitly so the
+      // ciphertext string can never be mistaken for a ProseMirror doc.
+      if (note.encryption !== null) {
+        return { ...textResult('not found'), isError: true };
+      }
       return jsonResult({
         id: note.id,
         title: note.title,
@@ -109,7 +117,7 @@ export function buildMcpServer(userId: string): McpServer {
         trashedAt: note.trashedAt,
         updatedAt: note.updatedAt,
         createdAt: note.createdAt,
-        markdown: docToMarkdown(note.content),
+        markdown: docToMarkdown(note.content as PMDoc),
       });
     },
   );
@@ -356,7 +364,11 @@ export function buildMcpServer(userId: string): McpServer {
     async ({ id }) => {
       const note = await getNote(userId, id);
       if (!note) return { ...textResult('not found'), isError: true };
-      return textResult(docToMarkdown(note.content));
+      // Same guard as `get_note`: don't try to render ciphertext as markdown.
+      if (note.encryption !== null) {
+        return { ...textResult('not found'), isError: true };
+      }
+      return textResult(docToMarkdown(note.content as PMDoc));
     },
   );
 

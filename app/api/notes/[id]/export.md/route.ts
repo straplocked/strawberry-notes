@@ -15,6 +15,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .from(notes)
     .where(and(eq(notes.id, id), eq(notes.userId, a.userId)));
   if (!n) return new Response('Not found', { status: 404 });
+  // Private notes can't be exported as markdown server-side: the body is
+  // ciphertext that the server cannot read. The browser export path needs
+  // to decrypt locally and emit the markdown there. Bearer-token callers
+  // (handled in the per-route includePrivate flag, PR 3) get a 404 instead.
+  if (n.encryption !== null) {
+    return new Response('Cannot export a private note as markdown server-side', {
+      status: 409,
+    });
+  }
 
   const md = `# ${n.title || 'Untitled'}\n\n${docToMarkdown(n.content as PMDoc)}`;
   const slug = (n.title || 'untitled')

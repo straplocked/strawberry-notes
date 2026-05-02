@@ -62,6 +62,7 @@ export async function semanticSearch(
     WHERE n.user_id = ${userId}
       AND n.trashed_at IS NULL
       AND n.content_embedding IS NOT NULL
+      AND n.encryption IS NULL
     GROUP BY n.id
     ORDER BY n.content_embedding <=> ${literal}::vector
     LIMIT ${k}
@@ -94,6 +95,9 @@ export async function semanticSearch(
     tagIds: (r.tagIds ?? []).filter((x): x is string => typeof x === 'string'),
     updatedAt:
       r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
+    // Always false here — the `encryption IS NULL` SQL filter above ensures
+    // private notes never reach this branch. Kept for DTO compatibility.
+    private: false,
     score: Number(r.score),
   }));
 }

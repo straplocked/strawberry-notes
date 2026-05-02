@@ -86,6 +86,13 @@ export interface ManifestNote {
   createdAt: string;
   updatedAt: string;
   trashedAt: string | null;
+  /**
+   * True for Private Notes — the corresponding `path` ends in `.encrypted.json`
+   * and contains a JSON envelope rather than markdown. The user's passphrase
+   * or recovery code is required to decrypt; the export ZIP carries no
+   * decryption material. Absent on plaintext notes for compactness.
+   */
+  encrypted?: true;
 }
 
 export interface ManifestAttachment {
@@ -107,6 +114,22 @@ export interface Manifest {
   };
   notes: ManifestNote[];
   attachments: ManifestAttachment[];
+  /**
+   * Present only when at least one Private Note is included in the archive.
+   * Documents the per-note ciphertext envelope so a future first-party
+   * importer (or a curious user) can rehydrate. See
+   * docs/technical/private-notes.md.
+   */
+  encryption?: {
+    /** Per-note envelope schema version. Currently 1. */
+    perNoteVersion: number;
+    /** Algorithm + parameters used to encrypt note bodies. */
+    cipher: 'AES-256-GCM';
+    /** "v" indicates the envelope version stored in each `.encrypted.json` file. */
+    fileFormat: 'sn-private-note-v1';
+    /** Documentation pointer (relative repo path). */
+    documentation: string;
+  };
 }
 
 /** Build the manifest JSON from already-computed note/attachment paths. */
@@ -117,6 +140,7 @@ export function buildManifest(input: {
   now?: Date;
 }): Manifest {
   const exportedAt = (input.now ?? new Date()).toISOString();
+  const hasEncrypted = input.notes.some((n) => n.encrypted === true);
   return {
     version: 1,
     exportedAt,
@@ -127,6 +151,16 @@ export function buildManifest(input: {
     },
     notes: input.notes,
     attachments: input.attachments,
+    ...(hasEncrypted
+      ? {
+          encryption: {
+            perNoteVersion: 1,
+            cipher: 'AES-256-GCM' as const,
+            fileFormat: 'sn-private-note-v1' as const,
+            documentation: 'docs/technical/private-notes.md',
+          },
+        }
+      : {}),
   };
 }
 
