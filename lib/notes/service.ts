@@ -31,6 +31,10 @@ export interface ListNotesParams {
    * Folder filter. Special tokens:
    *   - "all"        — every non-trashed note (default)
    *   - "pinned"     — pinned non-trashed notes
+   *   - "private"    — non-trashed notes the user has marked Private
+   *                    (`encryption IS NOT NULL`). Bearer callers passing
+   *                    `includePrivate: false` get an empty list — by
+   *                    construction, since the same filter then runs.
    *   - "trash"      — soft-deleted notes only
    *   - "today" / "yesterday" / "past7" / "past30" — time-range filter on
    *     `updatedAt`; non-trashed notes only. See `lib/notes/time-range.ts`.
@@ -75,6 +79,9 @@ export async function listNotes(
 
   if (folder === 'pinned') {
     conditions.push(eq(notes.pinned, true));
+    conditions.push(isNull(notes.trashedAt));
+  } else if (folder === 'private') {
+    conditions.push(isNotNull(notes.encryption));
     conditions.push(isNull(notes.trashedAt));
   } else if (folder === 'trash') {
     conditions.push(isNotNull(notes.trashedAt));

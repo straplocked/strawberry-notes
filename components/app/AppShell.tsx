@@ -212,6 +212,8 @@ export function AppShell() {
         return 'All Notes';
       case 'pinned':
         return 'Pinned';
+      case 'private':
+        return 'Private';
       case 'trash':
         return 'Trash';
       case 'time':
@@ -558,6 +560,7 @@ export function AppShell() {
       allCount={counts?.all ?? 0}
       pinnedCount={counts?.pinned ?? 0}
       trashCount={counts?.trash ?? 0}
+      privateCount={counts?.private ?? 0}
       view={view}
       onView={onViewFromSidebar}
       onNew={onNewNote}

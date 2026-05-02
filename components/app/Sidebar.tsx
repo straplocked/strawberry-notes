@@ -290,6 +290,12 @@ export interface SidebarProps {
   allCount: number;
   pinnedCount: number;
   trashCount: number;
+  /**
+   * Live private-note count. When `> 0` the sidebar renders a "Private" row
+   * in the Library section beneath Pinned. `0` hides the row entirely so
+   * users who never enabled the feature see no extra chrome.
+   */
+  privateCount: number;
   view: FolderView;
   onView: (v: FolderView) => void;
   onNew: () => void;
@@ -827,6 +833,31 @@ function SidebarImpl(props: SidebarProps) {
             <span>Pinned</span>
             <span style={countStyle}>{props.pinnedCount}</span>
           </div>
+          {props.privateCount > 0 && (
+            <div
+              className={navRowClass(isActiveKind('private'))}
+              style={navRowStyle(isActiveKind('private'), dense)}
+              onClick={() => onView({ kind: 'private' })}
+              title="Notes you've marked Private — bodies encrypted, hidden from MCP and the web clipper"
+            >
+              <span
+                style={{
+                  width: 15,
+                  height: 15,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 12,
+                  lineHeight: 1,
+                  color: isActiveKind('private') ? 'var(--berry)' : 'var(--ink-3)',
+                }}
+              >
+                🔒
+              </span>
+              <span>Private</span>
+              <span style={countStyle}>{props.privateCount}</span>
+            </div>
+          )}
         </div>
 
         <div style={styles.section}>

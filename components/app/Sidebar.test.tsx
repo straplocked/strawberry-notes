@@ -23,6 +23,7 @@ function setup(overrides: Partial<SidebarProps> = {}) {
     allCount: 9,
     pinnedCount: 1,
     trashCount: 0,
+    privateCount: 0,
     view: { kind: 'all' },
     onView,
     onNew,
@@ -91,6 +92,22 @@ describe('Sidebar — collapsible sections', () => {
   it('hides the Tags section entirely when there are no tags', () => {
     setup({ tags: [] });
     expect(screen.queryByRole('button', { name: 'Tags' })).not.toBeInTheDocument();
+  });
+
+  it('hides the Private row when privateCount is 0', () => {
+    setup({ privateCount: 0 });
+    expect(screen.queryByText('Private')).not.toBeInTheDocument();
+  });
+
+  it('renders the Private row in Library when privateCount > 0', () => {
+    setup({ privateCount: 3 });
+    expect(screen.getByText('Private')).toBeInTheDocument();
+  });
+
+  it('clicking the Private row fires onView with kind=private', () => {
+    const { onView } = setup({ privateCount: 1 });
+    fireEvent.click(screen.getByText('Private'));
+    expect(onView).toHaveBeenCalledWith({ kind: 'private' });
   });
 
   it('expands a collapsed Folders section when "+" is pressed so the new-folder draft is visible', () => {

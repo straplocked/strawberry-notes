@@ -21,6 +21,12 @@ export async function GET() {
       all: sql<number>`count(*) filter (where ${notes.trashedAt} is null)::int`,
       pinned: sql<number>`count(*) filter (where ${notes.trashedAt} is null and ${notes.pinned} = true)::int`,
       trash: sql<number>`count(*) filter (where ${notes.trashedAt} is not null)::int`,
+      // `private` matches the sidebar row's filter exactly (live notes whose
+      // body the user has marked Private). Backed by the partial
+      // `notes_encryption_idx` from drizzle/0012_private_notes.sql, so the
+      // FILTER cost is a tiny lookup even on workspaces with thousands of
+      // plaintext notes.
+      privateCount: sql<number>`count(*) filter (where ${notes.trashedAt} is null and ${notes.encryption} is not null)::int`,
     })
     .from(notes)
     .where(eq(notes.userId, a.userId));
@@ -29,6 +35,7 @@ export async function GET() {
     all: Number(row?.all ?? 0),
     pinned: Number(row?.pinned ?? 0),
     trash: Number(row?.trash ?? 0),
+    private: Number(row?.privateCount ?? 0),
   };
   return NextResponse.json(out);
 }
