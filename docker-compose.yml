@@ -38,6 +38,22 @@ services:
       # and the credentials provider rejects sign-in until the user clicks
       # the confirmation link emailed at signup. Implies SMTP must be set.
       REQUIRE_EMAIL_CONFIRMATION: ${REQUIRE_EMAIL_CONFIRMATION:-false}
+      # Auth-mode flags. Default with all unset = password-only, identical
+      # to v1. See docs/technical/auth.md for the full mode matrix.
+      PASSWORD_AUTH: ${PASSWORD_AUTH:-true}
+      TOTP_ENABLED: ${TOTP_ENABLED:-false}
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-SSO}
+      OIDC_AUTO_PROVISION: ${OIDC_AUTO_PROVISION:-false}
+      OIDC_TRUST_EMAIL_FOR_LINKING: ${OIDC_TRUST_EMAIL_FOR_LINKING:-false}
+      PROXY_AUTH: ${PROXY_AUTH:-false}
+      PROXY_AUTH_USER_HEADER: ${PROXY_AUTH_USER_HEADER:-x-authentik-username}
+      PROXY_AUTH_EMAIL_HEADER: ${PROXY_AUTH_EMAIL_HEADER:-x-authentik-email}
+      PROXY_AUTH_SHARED_SECRET: ${PROXY_AUTH_SHARED_SECRET:-}
+      PROXY_AUTH_LOGOUT_URL: ${PROXY_AUTH_LOGOUT_URL:-}
     ports:
       # Host port 3200 chosen to avoid collisions with other local containers
       # (3000 / 3100 were already in use). Override via APP_PORT in .env.
