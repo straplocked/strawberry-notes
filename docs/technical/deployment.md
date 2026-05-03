@@ -312,52 +312,91 @@ When you do this, set `AUTH_URL=https://notes.example.com` in `.env` **before** 
 
 ## Unraid
 
-The image runs as **UID 1001 / GID 1001** (the non-root `nextjs` user from `docker/Dockerfile`). Unraid's default container UID is 99/100; that's fine when you stick to **named Docker volumes** (the supplied `docker-compose.yml` does), because Docker manages ownership inside `/var/lib/docker/volumes/...`.
+Strawberry Notes ships a published image at `ghcr.io/straplocked/strawberry-notes` and an Unraid template you can paste straight into the Docker tab — no shell commands, no compose file.
 
-If you switch to **host bind mounts** under `/mnt/user/appdata/strawberry-notes/` (the typical Unraid pattern, so backups land on the array), chown the host paths once before first boot:
+### Quick install (template URL)
+
+1. Make sure you have a Postgres 16+ database with the `pgvector` extension. If your existing Postgres container is plain `postgres:16`, swap it for `pgvector/pgvector:pg16` (drop-in compatible on the same `pgdata` volume) — otherwise migrations will fail with `extension "vector" does not exist`.
+
+2. Create a database and user for Strawberry on your Postgres. From the Postgres container's shell:
+
+   ```sql
+   CREATE USER strawberry WITH PASSWORD '<long-random-string>';
+   CREATE DATABASE strawberry OWNER strawberry;
+   ```
+
+3. Generate `AUTH_SECRET` once. Anywhere with `openssl`:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+   Keep this value stable across container recreates — rotating it logs everyone out.
+
+4. In Unraid: **Docker** tab → **Add Container** → paste the template URL into the *Template* field:
+
+   ```
+   https://raw.githubusercontent.com/straplocked/strawberry-notes/main/unraid/strawberry-notes.xml
+   ```
+
+   The form pre-fills with sensible defaults. Required fields: `WebUI` port, `DATABASE_URL`, `AUTH_SECRET`, and the uploads host path (`/mnt/user/appdata/strawberry-notes/data` by default).
+
+5. **First-time admin setup.** The bootstrap rule is "first user is admin" — but signup is closed by default. Two options:
+   - Set `ALLOW_PUBLIC_SIGNUP=true` in the template, deploy, visit `/signup`, create your account (you become admin), then flip it back to `false` and redeploy. Two clicks, no shell.
+   - Or use the operator CLI from a terminal: `docker exec -it strawberry-notes npm run user:create -- you@example.com`.
+
+That's the whole install. Migrations run on first boot via the entrypoint, so the first time you open the WebUI the schema is ready.
+
+### Image tags
+
+| Tag                | Use when                                                  |
+| ------------------ | --------------------------------------------------------- |
+| `:latest`          | The most recent tagged release (recommended for prod).    |
+| `:vX.Y.Z`          | Pin to a specific release.                                |
+| `:main`            | Bleeding-edge; rebuilt on every commit to `main`.         |
+| `:sha-<7chars>`    | Exact reproducibility — pin to a specific commit.         |
+
+The Unraid template ships with `:latest` so you get release builds by default. Switch to `:main` only if you want to track HEAD.
+
+### File ownership
+
+The image runs as **UID 1001 / GID 1001** (the non-root `nextjs` user from `docker/Dockerfile`). When you point the uploads volume at a host path under `/mnt/user/appdata/strawberry-notes/data`, Unraid creates the directory as `nobody:users` (99:100); the entrypoint will fail to write into it.
+
+Run once before first boot:
 
 ```bash
-mkdir -p /mnt/user/appdata/strawberry-notes/{uploads,pgdata}
-chown -R 1001:1001 /mnt/user/appdata/strawberry-notes/uploads
-chown -R 999:999  /mnt/user/appdata/strawberry-notes/pgdata    # postgres image runs as UID 999
+mkdir -p /mnt/user/appdata/strawberry-notes/data
+chown -R 1001:1001 /mnt/user/appdata/strawberry-notes/data
 ```
 
-Then point the volumes at those paths:
+(If you let Strawberry create files first, just `chown` recursively after — no data loss.)
 
-```yaml
-volumes:
-  - /mnt/user/appdata/strawberry-notes/uploads:/data
-  # ...and on the postgres service:
-  - /mnt/user/appdata/strawberry-notes/pgdata:/var/lib/postgresql/data
-```
+### Postgres requirements
 
-### Community-Applications-style env table
-
-For an Unraid Docker template, the four fields you need are:
-
-| Env var               | Required | Example                                              |
-| --------------------- | :------: | ---------------------------------------------------- |
-| `AUTH_SECRET`         |    ✅    | `openssl rand -base64 32` output                     |
-| `AUTH_URL`            |    ✅    | `https://notes.your-domain.com` (or `http://<unraid-ip>:3200` if no proxy) |
-| `DATABASE_URL`        |    ✅    | `postgres://strawberry:<password>@postgres:5432/strawberry` |
-| `ALLOW_PUBLIC_SIGNUP` |          | `false` (default) — leave unset unless you want open signup |
-
-Set the **WebUI** field on the Unraid template to `http://[IP]:[PORT:3200]/api/health` so the dashboard's green/red dot reflects real readiness, not just port-open.
+| Requirement | Why |
+| --- | --- |
+| Postgres **16+** | Drizzle migrations target 16; older versions miss SQL features used by the schema. |
+| `pgvector` extension installed | The `0005_embeddings.sql` migration runs `CREATE EXTENSION IF NOT EXISTS vector`; without it, the entrypoint exits 1 and the container restart-loops. Use the `pgvector/pgvector:pg16` image — drop-in compatible with `postgres:16` on the same `pgdata` volume. |
+| Network reachable | `DATABASE_URL` must resolve from inside the Strawberry container. Either share a Docker network with Postgres (`postgres:5432`) or use the Unraid LAN IP (`192.168.x.x:5432`). |
 
 ### Embedding endpoint when Ollama is a sibling container
 
-If you run Ollama as another Unraid container on the same docker network (e.g. `ollama` exposed on host port `11434`), set:
+If you run Ollama as another Unraid container on the same Docker network (e.g. `ollama` exposed on host port `11434`), set in the template's advanced section:
 
-```bash
+```
 EMBEDDING_ENDPOINT=http://<unraid-lan-ip>:11434/v1
 EMBEDDING_MODEL=mxbai-embed-large
 EMBEDDING_DIMS=1024
 EMBEDDING_API_KEY=                 # leave blank — Ollama doesn't require one
 ```
 
-Use the LAN IP rather than `localhost` because the Strawberry Notes container's `localhost` is the container itself, not the host. If both containers join a shared Docker network, `http://ollama:11434/v1` works too — but the LAN-IP form is the safer default for a stock Unraid Docker setup.
+Use the LAN IP rather than `localhost` — the Strawberry container's `localhost` is the container itself, not the host. If both containers join a shared Docker network, `http://ollama:11434/v1` works too.
 
-After enabling, run the backfill once: `docker compose exec app npm run db:embed`.
+After enabling embeddings, run the backfill once from a terminal: `docker exec -it strawberry-notes npm run db:embed`.
+
+### Manual / compose-based install (advanced)
+
+If you'd rather check out the repo and run `docker compose up -d` (e.g. to develop against the image), the supplied `docker-compose.yml` brings up both `app` and a `pgvector/pgvector:pg16` service together. See [Compose Services](#compose-services) above. The Unraid template path is just a thin wrapper around the same image.
 
 ---
 

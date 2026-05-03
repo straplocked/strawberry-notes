@@ -65,6 +65,20 @@ provisions accounts with `npm run user:create`. To open registration, set
 
 Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (image attachments).
 
+### Unraid (no commands)
+
+The image is published to GitHub Container Registry as
+`ghcr.io/straplocked/strawberry-notes:latest`. Add to Unraid's Docker tab via
+**Add Container** → paste this into the Template field:
+
+```
+https://raw.githubusercontent.com/straplocked/strawberry-notes/main/unraid/strawberry-notes.xml
+```
+
+Bring your own Postgres (16+ with `pgvector`); the form fields walk you
+through `DATABASE_URL`, `AUTH_SECRET`, and the uploads host path. Full
+walk-through: [docs/technical/deployment.md#unraid](docs/technical/deployment.md#unraid).
+
 ### Operator commands
 
 | Task                              | Command                                                                    |
