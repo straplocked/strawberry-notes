@@ -62,3 +62,4 @@ If the user asks you to refresh, regenerate, or update documentation:
 - The service worker at `public/sw.js` is **read-only SWR**. There is no offline write queue in v1, even though Dexie is installed.
 - `notes.contentText` is a **server-maintained mirror** of the plain-text flattening of `notes.content` — never set it from the client.
 - Port **3200** is deliberate — check `docker-compose.yml` and `package.json` scripts before changing it.
+- **Private Notes (v1.5):** when `notes.encryption` is non-null, `notes.content` holds a **base64 ciphertext string**, not a ProseMirror doc. Anything that calls `docToMarkdown` / `countTasks` / similar must branch on `note.encryption !== null` first. Service-layer reads gate bearer-token (MCP / clipper) callers with `includePrivate: false`. Full picture in [docs/technical/private-notes.md](docs/technical/private-notes.md).

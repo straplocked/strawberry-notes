@@ -115,7 +115,7 @@ Query params:
 
 | Param     | Values                                                                              | Meaning                                                          |
 | --------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `folder`  | `all` \| `pinned` \| `trash` \| `today` \| `yesterday` \| `past7` \| `past30` \| `<uuid>` | Which view. Default `all`. Time tokens filter by `updatedAt`. |
+| `folder`  | `all` \| `pinned` \| `private` \| `trash` \| `today` \| `yesterday` \| `past7` \| `past30` \| `<uuid>` | Which view. Default `all`. `private` = `encryption IS NOT NULL`; bearer-token callers see this list as empty by construction (see `includePrivate` in [private-notes.md](private-notes.md)). Time tokens filter by `updatedAt`. |
 | `tag`     | `<uuid>`                                                                            | Filter to notes that carry this tag.                             |
 | `q`       | string                                                                              | FTS query over title + `contentText` (websearch).                |
 
@@ -159,16 +159,37 @@ Full note (`NoteDTO`) including `content` (PM JSON).
 
 Partial update. Any of these fields may be present:
 
-| Field      | Type                | Effect                                                             |
-| ---------- | ------------------- | ------------------------------------------------------------------ |
-| `title`    | string              | Rename.                                                            |
-| `content`  | ProseMirror doc     | Overwrites `content`. Server recomputes `contentText` from it.     |
-| `folderId` | uuid \| null        | Move between folders (null = no folder).                           |
-| `pinned`   | boolean             | Pin / unpin.                                                       |
-| `trashed`  | boolean             | `true` → sets `trashedAt = now()`. `false` → clears.               |
-| `tagNames` | string[]            | Replaces the note's tags (upserts per-user by normalised name).    |
+| Field        | Type                              | Effect                                                                                     |
+| ------------ | --------------------------------- | ------------------------------------------------------------------------------------------ |
+| `title`      | string                            | Rename.                                                                                    |
+| `content`    | ProseMirror doc                   | Overwrites `content`. Server recomputes `contentText` from it. Refused (400) when the note is currently private — pass `encryption: null` + `content` together for the private→plaintext transition. |
+| `folderId`   | uuid \| null                      | Move between folders (null = no folder).                                                   |
+| `pinned`     | boolean                           | Pin / unpin.                                                                               |
+| `trashed`    | boolean                           | `true` → sets `trashedAt = now()`. `false` → clears.                                       |
+| `tagNames`   | string[]                          | Replaces the note's tags (upserts per-user by normalised name).                            |
+| `encryption` | `{ v: 1, iv: <base64> }` \| `null` | Private Notes transition control. Object → make private (requires `ciphertext`). `null` → make plaintext (requires `content`). Field absent (the default) → no change to privacy state. The schema distinguishes `null` from missing by reading raw key existence. |
+| `ciphertext` | string                            | Required when `encryption` is a non-null object. Base64-encoded AES-256-GCM ciphertext+tag of the encrypted ProseMirror doc; capped at 4 MB. See [private-notes.md](private-notes.md). |
 
-Response: updated `NoteDTO`.
+Response: updated `NoteDTO` (`content` is the base64 ciphertext when private; `encryption` carries the per-note envelope or `null`).
+
+Errors: `400` with `{ error: <message> }` for malformed encryption transitions (e.g. `encryption` supplied without `ciphertext`, plaintext `content` PATCH on a currently-private note).
+
+### `GET /api/notes/counts`
+
+Top-level sidebar counts in a single SQL query. Computed authoritatively rather than derived from whatever notes list happens to be cached.
+
+Response (`NoteCountsDTO`):
+
+```json
+{
+  "all":     <int>,
+  "pinned":  <int>,
+  "trash":   <int>,
+  "private": <int>
+}
+```
+
+`private` covers live (non-trashed) notes whose `encryption IS NOT NULL`. Backed by the partial `notes_encryption_idx` from `drizzle/0012_private_notes.sql` so the FILTER aggregate stays cheap on big workspaces. The sidebar uses this count to decide whether to render the "🔒 Private" row at all.
 
 ### `DELETE /api/notes/:id`
 
@@ -483,6 +504,68 @@ Response: `{ webhookId, ok, status, attempt, errorMessage? }`.
 
 ---
 
+## Private Notes
+
+Session-only routes (no bearer surface — the wrap material would defeat the threat model if a token could fetch it). Together they manage the per-user wrapped Note Master Key for [Private Notes](private-notes.md). The encrypt / decrypt operations themselves happen entirely in the browser; these routes are a dumb store for the wrap envelopes.
+
+### `GET /api/private-notes`
+
+Lightweight status for the Settings panel + sidebar. Returns:
+
+```json
+{ "configured": <bool>, "privateCount": <int> }
+```
+
+`configured` is true once the user has clicked **Set up Private Notes**. `privateCount` mirrors the same count exposed by `/api/notes/counts` for callers that don't want the full counts payload.
+
+### `GET /api/private-notes/wrap`
+
+Returns the wrap blobs + KDF parameters needed to derive the unwrapping KEK in the browser. Cached client-side after the first call.
+
+Response:
+
+```json
+{
+  "version": 1,
+  "passphraseWrap": { "v": 1, "kdf": "PBKDF2-SHA256", "iters": 600000, "salt": "...", "iv": "...", "ct": "..." },
+  "recoveryWrap":   { "v": 1, "kdf": "PBKDF2-SHA256", "iters": 600000, "salt": "...", "iv": "...", "ct": "..." },
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+`404 { error: "not configured" }` when the user has never set up Private Notes.
+
+### `POST /api/private-notes/setup`
+
+First-time setup. The client generates the NMK and a recovery code locally, derives both KEKs, wraps the NMK twice, and posts the two envelopes here. The server stores them and returns the same shape as `GET /wrap`. `409` on second call — use the rotation routes below to change a wrap.
+
+```json
+{ "passphraseWrap": { ... }, "recoveryWrap": { ... } }
+```
+
+### `PATCH /api/private-notes/passphrase`
+
+Replace the passphrase wrap (after the user typed in a new passphrase and the client re-wrapped the NMK). `404` when not configured.
+
+```json
+{ "passphraseWrap": { ... } }
+```
+
+### `POST /api/private-notes/recovery`
+
+Replace the recovery-code wrap (after the client generated a new code and re-wrapped the NMK). The new recovery code itself never touches the server. `404` when not configured.
+
+```json
+{ "recoveryWrap": { ... } }
+```
+
+### `DELETE /api/private-notes`
+
+Disable Private Notes entirely. Refuses with `409 { error: "has private notes", privateCount: <int> }` while the user still has any private notes — the server is about to drop the only material that could ever decrypt them, so the client must first migrate them back to plaintext (one by one, via the editor's lock toggle).
+
+---
+
 ## MCP
 
 ### `POST /api/mcp`
@@ -513,3 +596,11 @@ Notable shapes added in v1.4:
 - `WebhookDTO` — `{ id, name, url, events, enabled, lastSuccessAt, lastFailureAt, lastErrorMessage, consecutiveFailures, createdAt }`. Listed by `GET /api/webhooks`.
 - `IssuedWebhook` — `WebhookDTO & { secret: string }`. Returned **once** by `POST /api/webhooks`.
 - Per-event payloads: `NoteCreatedPayload`, `NoteUpdatedPayload`, `NoteTrashedPayload`, `NoteTaggedPayload`, `NoteLinkedPayload` — see `lib/webhooks/types.ts` and [webhooks.md](webhooks.md).
+
+Notable shapes added in v1.5 (Private Notes):
+
+- `NoteEncryption` — `{ v: number, iv: string }`. Per-note envelope; `iv` is base64. Mirrored on `notes.encryption` jsonb. `null` for plaintext rows.
+- `NoteListItemDTO` gains `private: boolean` — drives the 🔒 badge in the list view and the locked-snippet placeholder.
+- `NoteDTO.content` becomes `PMDoc | string` — string is the base64 ciphertext when `encryption !== null`.
+- `NoteCountsDTO` gains `private: number` — the live private-note count, drives the sidebar's conditional Private row.
+- `PrivateNotesWrapBlob` / `PrivateNotesMaterial` / `PrivateNotesStatus` — return shapes for the `/api/private-notes/*` routes; canonical types in `lib/types.ts` and `lib/crypto/private-notes.ts`.
