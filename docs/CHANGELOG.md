@@ -5,6 +5,19 @@
 
 ---
 
+## Run 8 — 2026-05-03
+
+**Summary:** Private Notes cleanup pass. Two follow-up code PRs landed after the v1.5 doc pass and need to be reflected: PR #57 (the optimistic-update fix so the list view flips immediately on a lock toggle — purely internal cache plumbing) and PR #58 (the conditional **🔒 Private** sidebar row that appears once `noteCounts.private > 0`, including a new `folder=private` token on `GET /api/notes` and a new `private: number` field in `NoteCountsDTO`). This run threads those through `api-reference.md`, `private-notes.md`, and `features.md`. No code changes.
+
+**Files modified:**
+
+- `docs/technical/api-reference.md` — Three updates. (1) `GET /api/notes` `folder` param table gains the `private` token with a one-line explanation of how the bearer-vs-session contract turns it into an empty list for MCP / clipper callers. (2) `PATCH /api/notes/:id` field table gains `encryption` and `ciphertext` rows; `content` row updated to call out the `encryption: null` + `content` pairing for the private→plaintext transition; explicit `400` error semantics on malformed transitions. (3) New `GET /api/notes/counts` section documenting the `NoteCountsDTO` shape including the new `private: number` field, with a note on the partial-index backing. (4) New `## Private Notes` section between the export route and the MCP route documenting the five `/api/private-notes/*` routes (status, wrap, setup, passphrase, recovery, disable) with request/response shapes and the 409-when-private-notes-still-exist disable behaviour. (5) DTO Shapes section gains a v1.5 sub-list covering `NoteEncryption`, the `NoteListItemDTO.private` flag, the `NoteDTO.content` union, the `NoteCountsDTO.private` field, and the `PrivateNotesWrapBlob` / `Material` / `Status` shapes.
+- `docs/technical/private-notes.md` — Implementation map expanded to cover the new sidebar surface and the listing path: schema entry now mentions the `notes_encryption_idx` partial index; service entry mentions the `folder: 'private'` token and the `listBacklinks` `includePrivate` extension; REST entry mentions the `private: number` count on `/api/notes/counts`; new **Sidebar** entry pointing at `Sidebar.tsx`; new **List view** entry for `NoteList.tsx`; new **Optimistic updates** entry covering the PR #57 + PR #58 wiring in `lib/api/hooks.ts`.
+- `docs/user/features.md` — Private Notes section gains a new **Finding your private notes** subsection between **Marking a note private** and **Unlocking**, describing the conditional sidebar row.
+- `DOC_UPDATE.md` — Run counter 7 → 8; last-run date 2026-05-03.
+
+---
+
 ## Run 7 — 2026-05-02
 
 **Summary:** v1.5 — **Private Notes** documentation pass. The crypto envelope, threat model, and recovery semantics for the per-note opt-in E2EE feature shipped over PRs #50, #54, #55. This pass adds the canonical `docs/technical/private-notes.md`, rewrites the roadmap E2EE non-goal entry into a "full-workspace E2EE" non-goal + a v1.5 section above it, adds a "Database at rest" section to deployment docs (LUKS / cloud volume encryption / encrypted backups), and threads the visibility note through every neighbouring doc that mentions agents, the clipper, the embedding worker, or the FTS index. Doc-only — no code changes in this run.

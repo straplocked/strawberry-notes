@@ -277,6 +277,10 @@ This is the lever to pull when you want a place to put things you don't want sur
 
 In any note, click the 🔒 button in the editor toolbar. The next save encrypts the body. The note still appears in your sidebar, the title and folder remain visible, and the note list shows a 🔒 next to its title — but the body shows "🔒 Private — unlock to read" until you unlock.
 
+**Finding your private notes:**
+
+The moment you have at least one private note, a **🔒 Private** row appears in the sidebar's Library section, right under Pinned, with a count. Click it to see only your private notes in the second pane. The row hides itself again as soon as the count drops to zero, so you don't carry the chrome when you don't have any.
+
 **Unlocking:**
 
 Open a private note while locked → you see an Unlock button. Enter your passphrase. The note decrypts in the editor for the rest of your session, until you lock manually (Settings → Lock now), close the tab, or hit the auto-lock timer (60 minutes of inactivity by default; change it in Settings).

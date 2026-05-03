@@ -164,13 +164,16 @@ this recovery code somewhere safe." The friction is deliberate.
 
 ## Implementation map
 
-- **Schema:** `lib/db/schema.ts` — `userEncryption` table, `notes.encryption` jsonb column. Migration: `drizzle/0012_private_notes.sql`.
+- **Schema:** `lib/db/schema.ts` — `userEncryption` table, `notes.encryption` jsonb column. Migration: `drizzle/0012_private_notes.sql`. Partial index `notes_encryption_idx` backs every `encryption IS NOT NULL` predicate.
 - **Crypto:** `lib/crypto/private-notes.ts` (WebCrypto). Tests: `lib/crypto/private-notes.test.ts`.
-- **Service:** `lib/notes/service.ts` — `createNote` / `updateNote` private branches; `listNotes` / `getNote` `includePrivate` option. `lib/notes/encryption-service.ts` for the wrap material.
-- **REST routes:** `app/api/private-notes/{setup,wrap,passphrase,recovery,route}.ts` (session-only, no bearer surface).
+- **Service:** `lib/notes/service.ts` — `createNote` / `updateNote` private branches; `listNotes` / `getNote` `includePrivate` option; `folder: 'private'` token (live notes with `encryption IS NOT NULL`). `lib/notes/encryption-service.ts` for the wrap material. `lib/notes/link-service.ts` `listBacklinks` gains `includePrivate` so MCP can't surface backlinks for a private target.
+- **REST routes:** `app/api/private-notes/{setup,wrap,passphrase,recovery,route}.ts` (session-only, no bearer surface). `app/api/notes/counts/route.ts` returns a fourth `private: number` count for the sidebar row.
 - **Browser store:** `lib/store/private-notes-store.ts` — in-memory NMK, auto-lock, BroadcastChannel cross-tab sync. Tests: `lib/store/private-notes-store.test.ts`.
 - **Settings UI:** `components/app/settings/PrivateNotesSection.tsx` + the three modals (`PrivateNotesSetupModal`, `PrivateNotesUnlockModal`, `PrivateNotesRotateModal`).
-- **Editor:** `components/app/Editor.tsx` — toolbar lock toggle, locked overlay with Unlock CTA, `decryptedContent` prop. `components/app/AppShell.tsx` orchestrates the encrypt-on-save / decrypt-on-load flow.
+- **Editor:** `components/app/Editor.tsx` — toolbar lock toggle, locked overlay with Unlock CTA, `decryptedContent` prop. `components/app/AppShell.tsx` orchestrates the encrypt-on-save / decrypt-on-load flow and mounts the unlock + setup modals.
+- **Sidebar:** `components/app/Sidebar.tsx` — conditional **🔒 Private** row in the Library section, rendered only when `noteCounts.private > 0`. Clicking it sets the view to `{ kind: 'private' }`, which routes through `viewToFolderParam` to `folder=private` on the list endpoint.
+- **List view:** `components/app/NoteList.tsx` — 🔒 badge next to titles for private notes; "🔒 Private — unlock to read" snippet replacement.
+- **Optimistic updates:** `lib/api/hooks.ts` — `usePatchNote.onMutate` flips the list-item `private` flag immediately on a lock toggle and clears `snippet` on becoming-private; `onSuccess` invalidates `qk.counts` and `['notes']` on any `encryption` change so the sidebar row + Private list refetch with server truth.
 - **MCP gating:** `lib/mcp/server.ts` — every read tool passes `{ includePrivate: false }`. Test: `lib/mcp/server.test.ts`.
 - **Web clipper gating:** `app/api/notes/search/semantic/route.ts` (and any future bearer-supporting read route) passes `{ includePrivate: auth.via === 'session' }`.
 
