@@ -34,7 +34,14 @@ export const qk = {
 
 /** Derived from how `useNotesList` shapes its filter key. */
 function viewKeyToKind(viewKey: string): FolderView['kind'] | 'folder-or-tag' {
-  if (viewKey === 'all' || viewKey === 'pinned' || viewKey === 'trash') return viewKey;
+  if (
+    viewKey === 'all' ||
+    viewKey === 'pinned' ||
+    viewKey === 'private' ||
+    viewKey === 'trash'
+  ) {
+    return viewKey;
+  }
   if (viewKey.startsWith('time:')) return 'time';
   return 'folder-or-tag';
 }
@@ -255,7 +262,10 @@ export function useCreateNote() {
         const q = typeof parts[2] === 'string' ? parts[2] : '';
         if (q) return; // don't fake-insert into a filtered search result
         const kind = viewKeyToKind(viewKey);
-        if (kind === 'trash' || kind === 'pinned') return;
+        // Brand-new notes never belong in Trash, Pinned, or Private — those
+        // require an explicit user action (delete, pin, lock toggle) after
+        // create.
+        if (kind === 'trash' || kind === 'pinned' || kind === 'private') return;
         if (kind === 'folder-or-tag' && viewKey.startsWith('folder:')) {
           const fid = viewKey.slice('folder:'.length);
           if (optimistic.folderId !== fid) return;
@@ -420,6 +430,14 @@ export function usePatchNote() {
           next = next.filter((n) => n.id !== id);
         }
 
+        // If a note transitions out of private while we're on the Private
+        // view, it leaves. The reverse (plaintext→private on a non-Private
+        // view) doesn't add it anywhere — `onSuccess` invalidates `['notes']`
+        // on encryption changes, so the Private list refetches and picks it up.
+        if (becomingPlaintext && kind === 'private') {
+          next = next.filter((n) => n.id !== id);
+        }
+
         // If folder changed and this list is a specific folder view, remove if no longer matches.
         if (patch.folderId !== undefined && viewKey.startsWith('folder:')) {
           const fid = viewKey.slice('folder:'.length);
@@ -511,8 +529,14 @@ export function usePatchNote() {
       if (patch.folderId !== undefined || patch.trashed !== undefined) {
         qc.invalidateQueries({ queryKey: qk.folders });
       }
-      // Top-level counts depend on pinned / trashed state.
-      if (patch.pinned !== undefined || patch.trashed !== undefined) {
+      // Top-level counts depend on pinned / trashed / encryption state. The
+      // encryption flip is what makes the sidebar's "Private" row appear or
+      // disappear, so invalidate even when nothing else changed.
+      if (
+        patch.pinned !== undefined ||
+        patch.trashed !== undefined ||
+        patch.encryption !== undefined
+      ) {
         qc.invalidateQueries({ queryKey: qk.counts });
       }
       // patchAllLists only removes notes from lists they no longer belong to;

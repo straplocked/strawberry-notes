@@ -110,6 +110,7 @@ export type TimeRange = 'today' | 'yesterday' | 'past7' | 'past30';
 export type FolderView =
   | { kind: 'all' }
   | { kind: 'pinned' }
+  | { kind: 'private' }
   | { kind: 'trash' }
   | { kind: 'time'; range: TimeRange }
   | { kind: 'folder'; id: string }
@@ -119,6 +120,12 @@ export interface NoteCountsDTO {
   all: number;
   pinned: number;
   trash: number;
+  /**
+   * Live (non-trashed) notes the user has marked Private. Drives whether
+   * the sidebar renders a "Private" row. The sidebar treats `0` as "hide
+   * the row" — it only appears once the user actually has a private note.
+   */
+  private: number;
 }
 
 export interface BacklinkDTO {
@@ -133,6 +140,7 @@ export function folderViewKey(v: FolderView): string {
   switch (v.kind) {
     case 'all':
     case 'pinned':
+    case 'private':
     case 'trash':
       return v.kind;
     case 'time':
