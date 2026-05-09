@@ -10,6 +10,7 @@ import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, typ
 import { WikiLinkExtension, type WikiLinkTriggerState } from '@/lib/editor/wiki-link-plugin';
 import { WikiLinkPopup } from './WikiLinkPopup';
 import { useUIStore } from '@/lib/store/ui-store';
+import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import { api } from '@/lib/api/client';
 import {
   IconAttach,
@@ -150,6 +151,12 @@ export interface EditorProps {
   onRestore?: () => void;
   onDeleteForever?: () => void;
   editorRef?: MutableRefObject<TiptapEditor | null>;
+  /**
+   * Notified whenever the TipTap instance changes (mount, note swap, unmount).
+   * Lets the parent expose the editor to other components without forcing
+   * them to read `.current` during render.
+   */
+  onEditor?: (editor: TiptapEditor | null) => void;
   readOnly?: boolean;
   loading?: boolean;
 
@@ -189,6 +196,7 @@ function EditorImpl({
   onRestore,
   onDeleteForever,
   editorRef,
+  onEditor,
   readOnly = false,
   loading = false,
   decryptedContent = null,
@@ -197,6 +205,7 @@ function EditorImpl({
   onToggleLock,
 }: EditorProps) {
   drender('Editor', { noteId: note?.id, readOnly });
+  const isMobile = useIsMobile();
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
   // Keep the latest callbacks behind refs so `useEditor` doesn't need to
   // re-create the TipTap instance on every parent re-render (typing lag).
@@ -359,10 +368,12 @@ function EditorImpl({
 
   useEffect(() => {
     if (editorRef) editorRef.current = editor;
+    onEditor?.(editor);
     return () => {
       if (editorRef && editorRef.current === editor) editorRef.current = null;
+      onEditor?.(null);
     };
-  }, [editor, editorRef]);
+  }, [editor, editorRef, onEditor]);
 
   // Auto-resize the title textarea whenever the active note changes (mount/switch).
   useEffect(() => {
@@ -474,6 +485,7 @@ function EditorImpl({
 
   return (
     <div className={styles.root}>
+      {!isMobile && (
       <div style={toolbarStyle}>
         <button
           style={tbtnStyle()}
@@ -657,6 +669,7 @@ function EditorImpl({
           )}
         </div>
       </div>
+      )}
 
       <div className={styles.canvas}>
         <div className={styles.page}>

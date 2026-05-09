@@ -10,6 +10,7 @@ import { NoteList } from './NoteList';
 import { Editor } from './Editor';
 import { TweaksPanel } from './Tweaks';
 import { MobileTopBar, type MobilePane } from './MobileTopBar';
+import { MobileBottomDock, MobileEditorDock, type DockTab } from './MobileBottomDock';
 import { PaneResizer } from './PaneResizer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ActionSheet, type ActionSheetAction } from './ActionSheet';
@@ -62,6 +63,7 @@ export function AppShell() {
   const [actionMenuNote, setActionMenuNote] = useState<NoteListItemDTO | null>(null);
   const [folderPickerNoteId, setFolderPickerNoteId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [editorActionsOpen, setEditorActionsOpen] = useState(false);
 
   const foldersQ = useFolders();
   const tagsQ = useTags();
@@ -241,6 +243,10 @@ export function AppShell() {
   const pendingRef = useRef<{ title?: string; contentDirty?: boolean }>({});
   const timerRef = useRef<number | null>(null);
   const editorRef = useRef<TiptapEditor | null>(null);
+  // Mirror of the live TipTap instance held in state so descendants
+  // (e.g. MobileEditorDock) can consume it without reading editorRef.current
+  // during render. Editor.tsx populates both via its `onEditor` callback.
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null);
   // Stable identity so child callbacks (onChangeTitle, onDirty) can be memoized
   // without re-creating on every AppShell render.
   const scheduleSave = useCallback(
@@ -592,6 +598,7 @@ export function AppShell() {
       onSearch={setSearch}
       density={settings.density}
       fullWidth={isMobile}
+      showHeader={!isMobile}
       loading={notesListQ.isPending && !notesListQ.data}
       onOpenNoteMenu={isMobile ? (n) => setActionMenuNote(n) : undefined}
     />
@@ -690,6 +697,7 @@ export function AppShell() {
       tags={activeNoteTags}
       availableTags={tags}
       editorRef={editorRef}
+      onEditor={setEditorInstance}
       loading={!!activeNoteId && noteQ.isPending && !noteQ.data}
       onChangeTitle={(title) => {
         if (!activeNoteId) return;
@@ -717,12 +725,125 @@ export function AppShell() {
     />
   );
 
-  const mobileTitle =
-    mobilePane === 'folders'
-      ? 'Folders'
-      : mobilePane === 'editor'
-        ? activeNote?.title || (noteQ.isPending ? 'Loading…' : 'Untitled')
-        : activeFolderName;
+  // Folder context label rendered inside the mobile top-bar search pill, e.g.
+  // "All · 132". The count uses the live list length so it tracks search
+  // filtering and view changes without needing a separate counts fetch.
+  const mobileFolderLabel = `${
+    mobilePane === 'folders' ? 'Library' : activeFolderName
+  } · ${listNotes.length}`;
+
+  // Active-tab derivation for the bottom dock. Only Library has a meaningful
+  // "you're here" state — New is an action and Settings is a menu opener.
+  const dockActive: DockTab | null = mobilePane === 'folders' ? 'library' : null;
+
+  // The strawberry mark in the top bar is the "Notes home" affordance —
+  // returns to All Notes regardless of where the user is.
+  const onTapNotesHome = () => {
+    setView({ kind: 'all' });
+    setSearch('');
+    pushMobilePane('list');
+  };
+
+  const onDockTab = (tab: DockTab) => {
+    switch (tab) {
+      case 'library':
+        pushMobilePane('folders');
+        break;
+      case 'new':
+        onNewNote();
+        break;
+      case 'settings':
+        setMobileMenuOpen(true);
+        break;
+    }
+  };
+
+  const onUploadImage = useCallback(async (file: File): Promise<string | null> => {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/api/uploads', { method: 'POST', body: form });
+      if (!res.ok) return null;
+      const { url } = (await res.json()) as { url: string };
+      return url;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Editor-pane action sheet — opens from the share/more icon in the mobile
+  // editor top bar. Replaces the desktop toolbar's pin / lock / share / trash
+  // controls, which are hidden on mobile.
+  const editorActionsList: ActionSheetAction[] = useMemo(() => {
+    if (!activeNote) return [];
+    const close = () => setEditorActionsOpen(false);
+    const inTrash = !!activeNote.trashedAt;
+    if (inTrash) {
+      return [
+        {
+          id: 'restore',
+          label: 'Restore',
+          onSelect: () => {
+            close();
+            onRestoreNote();
+          },
+        },
+        {
+          id: 'forever',
+          label: 'Delete forever…',
+          destructive: true,
+          onSelect: () => {
+            close();
+            onRequestDeleteForever();
+          },
+        },
+      ];
+    }
+    const acts: ActionSheetAction[] = [
+      {
+        id: 'pin',
+        label: activeNote.pinned ? 'Unpin' : 'Pin to top',
+        onSelect: () => {
+          close();
+          onTogglePinActive();
+        },
+      },
+    ];
+    if (onToggleLock) {
+      const isPrivate = activeNote.encryption !== null;
+      acts.push({
+        id: 'lock',
+        label: isPrivate ? 'Make plaintext' : 'Make private',
+        onSelect: () => {
+          close();
+          onToggleLock();
+        },
+      });
+    }
+    acts.push({
+      id: 'share',
+      label: 'Share',
+      onSelect: () => {
+        close();
+        // Visual-only — share API isn't wired in v1.
+      },
+    });
+    acts.push({
+      id: 'trash',
+      label: 'Move to trash',
+      destructive: true,
+      onSelect: () => {
+        close();
+        onTrashNote();
+      },
+    });
+    return acts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNote?.id, activeNote?.pinned, activeNote?.trashedAt, activeNote?.encryption]);
+
+  const editorFolderColor = activeNoteFolder?.color ?? 'var(--ink-4)';
+  const editorFolderName = activeNoteFolder?.name ?? 'Unfiled';
+  const editorUpdatedLabel = activeNote ? relativeShort(activeNote.updatedAt) : '';
 
   const content = isMobile ? (
     <div
@@ -735,18 +856,34 @@ export function AppShell() {
     >
       <MobileTopBar
         pane={mobilePane}
-        title={mobileTitle}
-        onOpenFolders={() => pushMobilePane('folders')}
-        onCloseFolders={() => pushMobilePane('list')}
+        search={search}
+        onSearch={setSearch}
+        folderLabel={mobileFolderLabel}
+        onBrandTap={onTapNotesHome}
+        editorFolderName={editorFolderName}
+        editorFolderColor={editorFolderColor}
+        editorUpdatedLabel={editorUpdatedLabel}
         onBackToList={() => pushMobilePane('list')}
-        onNewNote={onNewNote}
-        onOpenMenu={() => setMobileMenuOpen(true)}
+        onTapEditorFolderPill={() => {
+          if (activeNote && activeNote.folderId) {
+            setView({ kind: 'folder', id: activeNote.folderId });
+          } else {
+            setView({ kind: 'all' });
+          }
+          pushMobilePane('list');
+        }}
+        onOpenEditorActions={() => setEditorActionsOpen(true)}
       />
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <div style={paneWrap(mobilePane === 'folders')}>{sidebarEl}</div>
         <div style={paneWrap(mobilePane === 'list')}>{noteListEl}</div>
         <div style={paneWrap(mobilePane === 'editor')}>{editorEl}</div>
       </div>
+      {mobilePane === 'editor' ? (
+        <MobileEditorDock editor={editorInstance} onUploadImage={onUploadImage} />
+      ) : (
+        <MobileBottomDock active={dockActive} onTab={onDockTab} />
+      )}
     </div>
   ) : (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
@@ -809,6 +946,12 @@ export function AppShell() {
         actions={mobileMenuActions}
         onClose={() => setMobileMenuOpen(false)}
       />
+      <ActionSheet
+        open={editorActionsOpen}
+        title="Note actions"
+        actions={editorActionsList}
+        onClose={() => setEditorActionsOpen(false)}
+      />
       <PrivateNotesUnlockModal open={pnUnlockOpen} onClose={() => setPnUnlockOpen(false)} />
       <PrivateNotesSetupModal open={pnSetupOpen} onClose={() => setPnSetupOpen(false)} />
     </>
@@ -822,6 +965,24 @@ function paneWrap(visible: boolean): CSSProperties {
     display: visible ? 'flex' : 'none',
     flexDirection: 'column',
   };
+}
+
+// Short relative-time formatter for the editor top-bar's "edited 2m" tag.
+// formatDate() returns longer forms ("Today · 9:30 am", "Yesterday"); the
+// design wants a compact "{N}{unit}" pattern that fits the chip width.
+function relativeShort(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const diffSec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (diffSec < 60) return 'now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `${diffH}h`;
+  const diffD = Math.round(diffH / 24);
+  if (diffD < 7) return `${diffD}d`;
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function folderDeleteMessage(target: FolderDTO, all: FolderDTO[]): string {
