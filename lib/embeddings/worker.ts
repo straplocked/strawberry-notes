@@ -22,6 +22,7 @@
 
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
+import { isEmbeddingColumnAvailable } from './availability';
 import {
   embedBatch,
   embeddingInputFor,
@@ -72,6 +73,10 @@ export async function runOnce(
 ): Promise<number> {
   const cfg = readEmbeddingConfig();
   if (!cfg) return 0;
+  // pgvector wasn't available when migrations ran (see
+  // drizzle/0005_embeddings.sql), so `content_embedding` doesn't exist.
+  // Stay idle rather than querying a column that isn't there.
+  if (!(await isEmbeddingColumnAvailable())) return 0;
   if (inFlight) return 0;
   inFlight = true;
   try {

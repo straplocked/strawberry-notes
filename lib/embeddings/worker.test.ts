@@ -29,6 +29,7 @@ vi.mock('./client', async () => {
 });
 
 import { runOnce, __resetWorkerForTests } from './worker';
+import { __setEmbeddingAvailableForTests } from './availability';
 
 beforeEach(() => {
   executeMock.mockReset();
@@ -38,6 +39,9 @@ beforeEach(() => {
   process.env.EMBEDDING_MODEL = 'm';
   process.env.EMBEDDING_DIMS = '3';
   delete process.env.EMBEDDING_API_KEY;
+  // Default: pgvector's column exists, matching every pre-existing test's
+  // assumptions. The dedicated "pgvector not available" test below flips it.
+  __setEmbeddingAvailableForTests(true);
 });
 
 afterEach(() => {
@@ -89,6 +93,14 @@ describe('runOnce', () => {
 
     // 1 SELECT + 2 UPDATEs = 3 calls.
     expect(executeMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('stays idle when pgvector is not available, even with the provider configured', async () => {
+    __setEmbeddingAvailableForTests(false);
+    const processed = await runOnce();
+    expect(processed).toBe(0);
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(embedBatchMock).not.toHaveBeenCalled();
   });
 
   it('refuses to double-run while a batch is in flight', async () => {

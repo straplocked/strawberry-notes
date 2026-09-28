@@ -81,3 +81,21 @@ ENV UPLOAD_DIR=/data/uploads
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "server.js"]
+
+# --- aio (all-in-one: points at a shared external Postgres) --------------
+# Identical runtime to `runner` above — same non-root user, same migrations,
+# same uploads volume — with one difference: the entrypoint generates
+# AUTH_SECRET into /data/.auth_secret on first boot instead of requiring the
+# operator to set one up front. That's the whole point of an Unraid
+# Community-Applications "one container, no shell commands" install.
+# No supervisord: the app and the in-process embedding worker
+# (lib/embeddings/worker.ts) both run inside the same `node server.js`
+# process, so there's nothing else to supervise.
+#
+# Build with:
+#   docker build -f docker/Dockerfile --target aio -t strawberry-notes:aio .
+FROM runner AS aio
+COPY --chown=nextjs:nodejs docker/aio/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["node", "server.js"]
