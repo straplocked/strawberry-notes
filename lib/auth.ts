@@ -4,8 +4,9 @@ import Credentials from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { db } from './db/client';
+import { isSecureRequest } from './http/public-url';
 import { users } from './db/schema';
 import type { RecoveryCodeRecord } from './auth/totp';
 import { isEmailConfirmationRequired } from './auth/signup-policy';
@@ -79,10 +80,15 @@ function buildProviders(): Provider[] {
             try {
               const cookieJar = await cookies();
               const maxAge = Math.floor(MFA_TICKET_TTL_MS / 1000);
+              // `secure` must track the real transport: a Secure cookie set
+              // over plain HTTP (LAN self-hosting) is dropped by the browser,
+              // which silently breaks the TOTP hand-off. Derive it from the
+              // request proto, not NODE_ENV.
+              const secure = isSecureRequest(await headers());
               cookieJar.set(MFA_TICKET_COOKIE, ticket, {
                 httpOnly: true,
                 sameSite: 'lax',
-                secure: process.env.NODE_ENV === 'production',
+                secure,
                 path: '/',
                 expires: expiresAt,
                 maxAge,
@@ -93,7 +99,7 @@ function buildProviders(): Provider[] {
               cookieJar.set(MFA_PENDING_COOKIE, '1', {
                 httpOnly: false,
                 sameSite: 'lax',
-                secure: process.env.NODE_ENV === 'production',
+                secure,
                 path: '/',
                 expires: expiresAt,
                 maxAge,
