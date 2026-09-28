@@ -170,7 +170,12 @@ async function markOffline(res) {
   const marker = '<script>window.__SN_OFFLINE_FALLBACK__=true;</script>';
   const marked = text.includes('<head>') ? text.replace('<head>', `<head>${marker}`) : marker + text;
   const headers = new Headers(res.headers);
+  // res.text() already gave us the decoded body — strip any transport
+  // framing headers describing the *original* encoded transfer so the
+  // browser doesn't try to gunzip a body that's no longer gzipped (or
+  // frame it by a content-length that no longer matches).
   headers.delete('content-length');
+  headers.delete('content-encoding');
   return new Response(marked, { status: res.status, statusText: res.statusText, headers });
 }
 
