@@ -68,7 +68,8 @@ Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (imag
 ### Unraid (no commands)
 
 The image is published to GitHub Container Registry as
-`ghcr.io/straplocked/strawberry-notes:latest`. Add to Unraid's Docker tab via
+`ghcr.io/straplocked/strawberry-notes:latest` for both `linux/amd64` and
+`linux/arm64` (Raspberry Pi 5, Apple Silicon, Ampere). Add to Unraid's Docker tab via
 **Add Container** → paste this into the Template field:
 
 ```
