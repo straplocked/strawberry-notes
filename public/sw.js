@@ -83,32 +83,40 @@ self.addEventListener('fetch', (event) => {
   const strategy = classifyRequest({ method: req.method, url: req.url, mode: req.mode, sameOrigin });
 
   if (strategy === 'data') {
-    event.respondWith(networkFirstData(req));
+    event.respondWith(networkFirstData(event, req));
   } else if (strategy === 'navigate') {
-    event.respondWith(handleNavigate(req));
+    event.respondWith(handleNavigate(event, req));
   } else if (strategy === 'static-hashed') {
-    event.respondWith(cacheFirstHashed(req));
+    event.respondWith(cacheFirstHashed(event, req));
   } else if (strategy === 'static-other') {
-    event.respondWith(networkFirstStatic(req));
+    event.respondWith(networkFirstStatic(event, req));
   }
   // 'ignore' — don't call respondWith; let the browser handle it normally.
 });
+
+// Every strategy below threads the fetch `event` through so any cache
+// write that shouldn't block the response is wrapped in
+// event.waitUntil(...) instead of being a bare unawaited promise. Without
+// that, the browser is free to suspend/terminate the worker the instant
+// respondWith()'s promise resolves — a fire-and-forget cache.put() can
+// lose the race and never actually persist, silently defeating both the
+// offline-read feature and (for the data cache specifically) this SW's
+// own privacy bookkeeping.
 
 // API: network-first so fresh data wins whenever online; cached response
 // covers short offline windows. A 401 means the session ended (sign-out
 // elsewhere, expired cookie) — never cache it, and proactively drop
 // whatever was cached so a *different* user signing in on this device
 // afterward can't be served the previous user's notes offline.
-async function networkFirstData(req) {
+async function networkFirstData(event, req) {
   const cache = await caches.open(DATA_CACHE);
   try {
     const res = await fetch(req);
     if (res.status === 401) {
-      const keys = await cache.keys();
-      await Promise.all(keys.map((k) => cache.delete(k)));
+      event.waitUntil(cache.keys().then((keys) => Promise.all(keys.map((k) => cache.delete(k)))));
       return res;
     }
-    if (res.ok) cache.put(req, res.clone());
+    if (res.ok) event.waitUntil(cache.put(req, res.clone()));
     return res;
   } catch (err) {
     const cached = await cache.match(req);
@@ -122,11 +130,11 @@ async function networkFirstData(req) {
 // offline" case) — never a different, unrelated cached page. With nothing
 // relevant cached, fall back to the static offline page instead of staying
 // silent about it.
-async function handleNavigate(req) {
+async function handleNavigate(event, req) {
   const cache = await caches.open(SHELL_CACHE);
   try {
     const res = await fetch(req);
-    cache.put(req, res.clone());
+    event.waitUntil(cache.put(req, res.clone()));
     return res;
   } catch (err) {
     const cached = await cache.match(req);
@@ -140,23 +148,23 @@ async function handleNavigate(req) {
 // Hashed /_next/static/* chunks are content-addressed and therefore safe to
 // cache-first — a new deploy ships new filenames, it never mutates an old
 // one, so there's no staleness risk.
-async function cacheFirstHashed(req) {
+async function cacheFirstHashed(event, req) {
   const cache = await caches.open(SHELL_CACHE);
   const cached = await cache.match(req);
   if (cached) return cached;
   const res = await fetch(req);
-  if (res.ok) cache.put(req, res.clone());
+  if (res.ok) event.waitUntil(cache.put(req, res.clone()));
   return res;
 }
 
 // Everything else static (icons, manifest, offline.html itself) is NOT
 // content-hashed, so it must not be cache-first forever — network-first
 // keeps it fresh after a deploy while still working offline.
-async function networkFirstStatic(req) {
+async function networkFirstStatic(event, req) {
   const cache = await caches.open(SHELL_CACHE);
   try {
     const res = await fetch(req);
-    if (res.ok) cache.put(req, res.clone());
+    if (res.ok) event.waitUntil(cache.put(req, res.clone()));
     return res;
   } catch (err) {
     const cached = await cache.match(req);
