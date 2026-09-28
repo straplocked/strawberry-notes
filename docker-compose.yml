@@ -3,6 +3,10 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
+      # Explicit: docker/Dockerfile also has an `aio` stage after `runner`
+      # (see docker/aio/), which would otherwise be the default build target
+      # (Docker builds the LAST stage when none is given).
+      target: runner
     image: strawberry-notes:latest
     restart: unless-stopped
     depends_on:

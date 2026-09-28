@@ -91,6 +91,12 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          # Explicit: `docker/Dockerfile` gained an `aio` stage after
+          # `runner` (docker/aio/), which would otherwise become the default
+          # target (Docker builds the LAST stage when none is given). Pin
+          # this job to the main image's stage so a future added stage
+          # can't silently redirect what `:main`/`:sha-*`/`:latest` ship.
+          target: runner
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
