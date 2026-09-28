@@ -9,8 +9,10 @@ import {
 } from './network-status';
 
 afterEach(() => {
-  // Reset shared module state between tests.
-  reportNetworkSuccess();
+  // Reset shared module state between tests — a real 'online' event is
+  // the only thing that clears every flag (including the SW-confirmed
+  // one), which is also exactly the real-world reset this module models.
+  window.dispatchEvent(new Event('online'));
 });
 
 describe('isLikelyNetworkError', () => {
@@ -46,11 +48,6 @@ describe('reportNetworkFailure / reportNetworkSuccess', () => {
     expect(getOfflineSnapshot()).toBe(false);
   });
 
-  it('reportOfflineFallbackServed() flips the snapshot with no error-shape filtering', () => {
-    reportOfflineFallbackServed();
-    expect(getOfflineSnapshot()).toBe(true);
-  });
-
   it('notifies subscribers when the snapshot changes', () => {
     let notified = 0;
     const unsubscribe = subscribeOffline(() => {
@@ -60,5 +57,26 @@ describe('reportNetworkFailure / reportNetworkSuccess', () => {
     reportNetworkFailure(new TypeError('Failed to fetch')); // no duplicate notify
     expect(notified).toBe(1);
     unsubscribe();
+  });
+});
+
+describe('reportOfflineFallbackServed', () => {
+  it('flips the snapshot with no error-shape filtering', () => {
+    reportOfflineFallbackServed();
+    expect(getOfflineSnapshot()).toBe(true);
+  });
+
+  it('is NOT cleared by reportNetworkSuccess — a cache-served "success" is not proof of connectivity', () => {
+    reportOfflineFallbackServed();
+    expect(getOfflineSnapshot()).toBe(true);
+    reportNetworkSuccess();
+    expect(getOfflineSnapshot()).toBe(true);
+  });
+
+  it('is cleared by a real browser online event', () => {
+    reportOfflineFallbackServed();
+    expect(getOfflineSnapshot()).toBe(true);
+    window.dispatchEvent(new Event('online'));
+    expect(getOfflineSnapshot()).toBe(false);
   });
 });
