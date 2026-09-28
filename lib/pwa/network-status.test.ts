@@ -4,6 +4,7 @@ import {
   isLikelyNetworkError,
   reportNetworkFailure,
   reportNetworkSuccess,
+  reportOfflineFallbackServed,
   subscribeOffline,
 } from './network-status';
 
@@ -43,6 +44,11 @@ describe('reportNetworkFailure / reportNetworkSuccess', () => {
     expect(getOfflineSnapshot()).toBe(true);
     reportNetworkSuccess();
     expect(getOfflineSnapshot()).toBe(false);
+  });
+
+  it('reportOfflineFallbackServed() flips the snapshot with no error-shape filtering', () => {
+    reportOfflineFallbackServed();
+    expect(getOfflineSnapshot()).toBe(true);
   });
 
   it('notifies subscribers when the snapshot changes', () => {

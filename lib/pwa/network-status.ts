@@ -56,6 +56,19 @@ export function reportNetworkFailure(err: unknown): void {
   }
 }
 
+/** Authoritative version of reportNetworkFailure() for when the *service
+ * worker* (not a guess based on a caught error) tells us a response came
+ * from its offline cache fallback — see
+ * lib/pwa/offline-fallback-marker.ts. No isLikelyNetworkError() filtering
+ * needed here: the SW only stamps this when it actually served a cached
+ * fallback after a real fetch failure. */
+export function reportOfflineFallbackServed(): void {
+  if (!recentNetworkFailure) {
+    recentNetworkFailure = true;
+    emit();
+  }
+}
+
 export function reportNetworkSuccess(): void {
   if (recentNetworkFailure) {
     recentNetworkFailure = false;

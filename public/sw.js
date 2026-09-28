@@ -138,11 +138,33 @@ async function handleNavigate(event, req) {
     return res;
   } catch (err) {
     const cached = await cache.match(req);
-    if (cached) return cached;
+    if (cached) return markOffline(cached);
     const offline = await cache.match(OFFLINE_URL);
-    if (offline) return offline;
+    if (offline) return markOffline(offline);
     throw err;
   }
+}
+
+// A cached page served in place of a failed live fetch is otherwise
+// indistinguishable, client-side, from a normal online response — the
+// page's own fetch()es to /api/* also transparently succeed from the data
+// cache (see networkFirstData), so lib/api/client.ts never sees a
+// rejected fetch() either. Stamp a marker onto the served HTML itself
+// (rather than a header, which client-side JS has no reliable way to read
+// back for its own document) so lib/pwa/offline-fallback-marker.ts can
+// flip the app's "Offline — showing saved notes" banner on. Cheap string
+// rewrite: these are our own precached/cached app-shell responses, never
+// third-party content.
+async function markOffline(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) return res;
+  const text = await res.text();
+  const marked = text.includes('<html ')
+    ? text.replace('<html ', '<html data-sn-offline="1" ')
+    : text.replace('<html>', '<html data-sn-offline="1">');
+  const headers = new Headers(res.headers);
+  headers.delete('content-length');
+  return new Response(marked, { status: res.status, statusText: res.statusText, headers });
 }
 
 // Hashed /_next/static/* chunks are content-addressed and therefore safe to

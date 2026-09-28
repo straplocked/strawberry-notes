@@ -10,6 +10,10 @@ import { postSessionToServiceWorker } from '@/lib/pwa/session-sw-sync';
 // listeners as early as possible so the one-shot beforeinstallprompt event
 // isn't missed before Settings (where the Install affordance lives) mounts.
 import '@/lib/pwa/install-prompt';
+// Side-effect import: checks whether this document was served by the SW's
+// offline cache fallback (see lib/pwa/offline-fallback-marker.ts) before
+// React hydration runs, so the offline banner can reflect it immediately.
+import '@/lib/pwa/offline-fallback-marker';
 
 /** Short, loggable shape for a React-Query key. */
 function fmtKey(key: readonly unknown[]): string {
