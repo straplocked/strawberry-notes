@@ -379,7 +379,7 @@ chown -R 1001:1001 /mnt/user/appdata/strawberry-notes/data
 | Requirement | Why |
 | --- | --- |
 | Postgres **16+** | Drizzle migrations target 16; older versions miss SQL features used by the schema. |
-| `pgvector` extension installed | The `0005_embeddings.sql` migration runs `CREATE EXTENSION IF NOT EXISTS vector`; without it, the entrypoint exits 1 and the container restart-loops. Use the `pgvector/pgvector:pg16` image — drop-in compatible with `postgres:16` on the same `pgdata` volume. |
+| `pgvector` extension — **optional** | `0005_embeddings.sql` wraps `CREATE EXTENSION vector` (and the embedding column/index) in a guard that checks `pg_available_extensions` first. If it's not installed, that part of the migration is skipped and logged — migrations still succeed and the container boots normally, just with semantic search disabled (see [All-in-one image (unraid)](#all-in-one-image-unraid) below). Install `pgvector` (e.g. the `pgvector/pgvector:pg16` image, drop-in compatible with `postgres:16` on the same `pgdata` volume) if you want semantic search. |
 | Network reachable | `DATABASE_URL` must resolve from inside the Strawberry container. Either share a Docker network with Postgres (`postgres:5432`) or use the Unraid LAN IP (`192.168.x.x:5432`). |
 
 ### Embedding endpoint when Ollama is a sibling container
@@ -400,6 +400,28 @@ After enabling embeddings, run the backfill once from a terminal: `docker exec -
 ### Manual / compose-based install (advanced)
 
 If you'd rather check out the repo and run `docker compose up -d` (e.g. to develop against the image), the supplied `docker-compose.yml` brings up both `app` and a `pgvector/pgvector:pg16` service together. See [Compose Services](#compose-services) above. The Unraid template path is just a thin wrapper around the same image.
+
+---
+
+## All-in-one image (unraid)
+
+For a shared/existing Postgres server instead of a dedicated `postgres` sidecar container, use the all-in-one image and template instead of the ones above:
+
+- Image: `ghcr.io/straplocked/strawberry-notes:aio` — build target `aio` in `docker/Dockerfile` (`docker build --target aio`), entrypoint `docker/aio/entrypoint.sh`.
+- Template: `unraid/strawberry-notes-aio.xml`.
+
+It's the same app and the same image otherwise — non-root UID 1001, port 3000 inside the container, `/data` for uploads — with two differences from the standard image:
+
+1. **No embedded Postgres.** `DATABASE_URL` must point at a Postgres server you already run — a shared instance is the point. Create a role that **owns** its own database (it does not need superuser):
+
+   ```sql
+   CREATE ROLE strawberry LOGIN PASSWORD '<long-random-string>';
+   CREATE DATABASE strawberry OWNER strawberry;
+   ```
+
+2. **Zero-config `AUTH_SECRET`.** Leave it unset and the entrypoint generates one into `/data/.auth_secret` on first boot (mode 600, written atomically so a crash mid-write can't corrupt it) and reuses it on every restart — no `openssl rand -base64 32` step before you can even start the container. Back up `/data` (uploads + this file) together; losing the secret file logs every session out but is otherwise harmless — a new one is generated on the next boot. If `/data` isn't writable, the entrypoint fails fast with a clear error instead of booting with a secret that won't survive a restart. `ALLOW_PUBLIC_SIGNUP` still defaults to `false` either way.
+
+`pgvector` is optional here exactly as described in [Postgres requirements](#postgres-requirements) above — a plain `postgres:17` server works, just without semantic search. The shared server this image targets in production runs `pgvector/pgvector:pg17-trixie` (Postgres 17 + pgvector 0.5+), where `CREATE EXTENSION vector` is trusted and the database-owner role from the snippet above can run it itself — no superuser step needed even to turn semantic search on.
 
 ---
 

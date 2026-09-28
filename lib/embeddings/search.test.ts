@@ -21,15 +21,25 @@ vi.mock('./client', async () => {
   };
 });
 
+const listNotesMock = vi.fn();
+vi.mock('../notes/service', () => ({
+  listNotes: (...args: unknown[]) => listNotesMock(...args),
+}));
+
 import { EmbeddingNotConfiguredError } from './client';
 import { semanticSearch } from './search';
+import { __setEmbeddingAvailableForTests } from './availability';
 
 beforeEach(() => {
   executeMock.mockReset();
   embedOneMock.mockReset();
+  listNotesMock.mockReset();
   process.env.EMBEDDING_ENDPOINT = 'https://api.example/v1';
   process.env.EMBEDDING_MODEL = 'm';
   process.env.EMBEDDING_DIMS = '3';
+  // Default: pgvector's column exists, matching every pre-existing test's
+  // assumptions. The dedicated fallback tests below flip it.
+  __setEmbeddingAvailableForTests(true);
 });
 
 afterEach(() => {
@@ -116,5 +126,72 @@ describe('semanticSearch', () => {
     // The clamp is internal, but we can at least verify that a non-empty
     // result batch still flows through the DB path without error.
     expect(executeMock).toHaveBeenCalledTimes(2);
+  });
+
+  describe('when pgvector is not available', () => {
+    beforeEach(() => {
+      __setEmbeddingAvailableForTests(false);
+    });
+
+    it('falls back to full-text search silently instead of erroring', async () => {
+      listNotesMock.mockResolvedValueOnce([
+        {
+          id: 'n1',
+          folderId: null,
+          title: 'Match',
+          snippet: 'a snippet',
+          pinned: false,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          tagIds: [],
+          hasImage: false,
+          private: false,
+        },
+      ]);
+
+      const out = await semanticSearch('user-1', 'topic', { k: 5 });
+
+      // Never touches the vector path.
+      expect(embedOneMock).not.toHaveBeenCalled();
+      expect(executeMock).not.toHaveBeenCalled();
+      // Delegates to the same full-text search `listNotes` already does.
+      expect(listNotesMock).toHaveBeenCalledWith(
+        'user-1',
+        { q: 'topic' },
+        { includePrivate: true },
+      );
+      expect(out).toEqual([{ id: 'n1', folderId: null, title: 'Match', snippet: 'a snippet', pinned: false, updatedAt: '2026-01-01T00:00:00.000Z', tagIds: [], hasImage: false, private: false, score: 0 }]);
+    });
+
+    it('respects k and includePrivate on the fallback path', async () => {
+      const rows = Array.from({ length: 3 }, (_, i) => ({
+        id: `n${i}`,
+        folderId: null,
+        title: `Note ${i}`,
+        snippet: '',
+        pinned: false,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        tagIds: [],
+        hasImage: false,
+        private: false,
+      }));
+      listNotesMock.mockResolvedValueOnce(rows);
+
+      const out = await semanticSearch('user-1', 'topic', { k: 2, includePrivate: false });
+
+      expect(out).toHaveLength(2);
+      expect(listNotesMock).toHaveBeenCalledWith(
+        'user-1',
+        { q: 'topic' },
+        { includePrivate: false },
+      );
+    });
+
+    it('still throws EmbeddingNotConfiguredError when the env is unset, before ever checking pgvector', async () => {
+      delete process.env.EMBEDDING_ENDPOINT;
+      await expect(semanticSearch('u', 'hello')).rejects.toBeInstanceOf(
+        EmbeddingNotConfiguredError,
+      );
+      expect(listNotesMock).not.toHaveBeenCalled();
+    });
   });
 });

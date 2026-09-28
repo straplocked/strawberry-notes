@@ -6,7 +6,9 @@
 
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
+import { listNotes } from '../notes/service';
 import type { NoteListItemDTO } from '../types';
+import { isEmbeddingColumnAvailable } from './availability';
 import { embedOne, EmbeddingNotConfiguredError, readEmbeddingConfig } from './client';
 
 export interface SemanticSearchResult extends NoteListItemDTO {
@@ -44,6 +46,21 @@ export async function semanticSearch(
   if (q.length === 0) return [];
 
   const k = Math.max(1, Math.min(50, opts.k ?? 10));
+
+  // pgvector wasn't available when migrations ran (see
+  // drizzle/0005_embeddings.sql), so `content_embedding` doesn't exist on
+  // this server. Degrade silently to full-text search rather than erroring
+  // — callers get usable, keyword-ranked results instead of a 503.
+  // `score: 0` marks these as "not a real cosine similarity".
+  if (!(await isEmbeddingColumnAvailable())) {
+    const rows = await listNotes(
+      userId,
+      { q },
+      { includePrivate: opts.includePrivate ?? true },
+    );
+    return rows.slice(0, k).map((r) => ({ ...r, score: 0 }));
+  }
+
   const [vec] = await embedMany(q, cfg, opts.fetchFn);
   const literal = `[${vec.join(',')}]`;
 
