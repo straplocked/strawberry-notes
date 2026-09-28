@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CACHE_VERSION, DATA_PATH_PREFIXES, OFFLINE_URL, PRECACHE_URLS } from './sw-policy';
+import { CACHE_VERSION, DATA_PATH_PREFIXES, OFFLINE_URL, PRECACHE_URLS, STATIC_CACHE } from './sw-policy';
 
 /**
  * public/sw.js is a plain, non-bundled classic worker script — it can't
@@ -54,6 +54,19 @@ describe('public/sw.js stays in sync with lib/pwa/sw-policy.ts', () => {
     expect(extractStringArrayConst('DATA_PATH_PREFIXES').sort()).toEqual(
       [...DATA_PATH_PREFIXES].sort(),
     );
+  });
+
+  it('derives STATIC_CACHE from CACHE_VERSION with the same suffix as sw-policy.ts', () => {
+    // STATIC_CACHE is a template literal in both files (like SHELL_CACHE/
+    // DATA_CACHE/META_CACHE), so it isn't caught by extractStringConst's
+    // single-quoted-literal regex — just pin the `${CACHE_VERSION}-static`
+    // pattern the two are expected to share.
+    expect(swSource).toContain('const STATIC_CACHE = `${CACHE_VERSION}-static`');
+    expect(STATIC_CACHE).toBe(`${CACHE_VERSION}-static`);
+  });
+
+  it("offline.html is routed into STATIC_CACHE at install, not SHELL_CACHE — it's never re-visited by a normal navigation, so SHELL_CACHE's sign-out wipe would strand it there permanently", () => {
+    expect(swSource).toContain('caches.open(STATIC_CACHE).then((cache) => cache.add(OFFLINE_URL)');
   });
 });
 

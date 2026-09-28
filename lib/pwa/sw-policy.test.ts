@@ -6,9 +6,11 @@ import {
   classifyRequest,
   DATA_CACHE,
   META_CACHE,
+  OFFLINE_URL,
   PRECACHE_URLS,
   shouldWipeForUserChange,
   SHELL_CACHE,
+  STATIC_CACHE,
 } from './sw-policy';
 
 const ORIGIN = 'https://strawberrynotes.example';
@@ -83,6 +85,28 @@ describe('cacheNamesToWipeOnUserChange', () => {
   it('picks only the shell + data caches, never the meta marker cache', () => {
     const names = [SHELL_CACHE, DATA_CACHE, META_CACHE, 'unrelated-cache'];
     expect(cacheNamesToWipeOnUserChange(names).sort()).toEqual([DATA_CACHE, SHELL_CACHE].sort());
+  });
+
+  it('never wipes STATIC_CACHE (the offline fallback page must survive a user change/sign-out)', () => {
+    const names = [SHELL_CACHE, DATA_CACHE, META_CACHE, STATIC_CACHE];
+    expect(cacheNamesToWipeOnUserChange(names)).not.toContain(STATIC_CACHE);
+  });
+});
+
+describe('STATIC_CACHE', () => {
+  it('is a distinct cache from SHELL_CACHE, derived from CACHE_VERSION', () => {
+    expect(STATIC_CACHE).toBe(`${CACHE_VERSION}-static`);
+    expect(STATIC_CACHE).not.toBe(SHELL_CACHE);
+  });
+
+  it('is where OFFLINE_URL is expected to live, not SHELL_CACHE — see public/sw.js', () => {
+    // Documents the intent (public/sw.js's install handler routes
+    // OFFLINE_URL into STATIC_CACHE specifically) — the actual runtime
+    // routing is only expressible in the SW itself, verified live via
+    // Docker+Playwright, but this pins the constants that decision
+    // depends on so they can't silently diverge.
+    expect(PRECACHE_URLS).toContain(OFFLINE_URL);
+    expect(STATIC_CACHE).not.toBe(SHELL_CACHE);
   });
 });
 

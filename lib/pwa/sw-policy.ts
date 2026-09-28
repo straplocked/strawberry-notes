@@ -19,10 +19,20 @@ export const DATA_CACHE = `${CACHE_VERSION}-data`;
 /** Tiny cache used only to persist a "last known signed-in user" marker
  * across service-worker restarts (the SW has no durable memory otherwise). */
 export const META_CACHE = `${CACHE_VERSION}-meta`;
+/** Holds *only* the static offline fallback page — deliberately separate
+ * from SHELL_CACHE. Sign-out (and the SW's own user-change detection)
+ * wipes SHELL_CACHE entirely, and offline.html is never re-visited by a
+ * normal navigation the way /notes or /login are, so if it lived in
+ * SHELL_CACHE it would be gone for good after the very first sign-out —
+ * discovered live (Docker+Playwright): precache succeeded, sign-out wiped
+ * it, and every offline fallback after that came up empty. Nothing here
+ * is personalized, so it never needs to be cleared for privacy. */
+export const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 /** Static offline fallback, served for a navigation that fails with nothing
  * relevant already cached. Must be precached (see PRECACHE_URLS) so it's
- * available even when the origin server itself is unreachable. */
+ * available even when the origin server itself is unreachable. Lives in
+ * STATIC_CACHE, not SHELL_CACHE — see that constant's doc. */
 export const OFFLINE_URL = '/offline.html';
 
 /** Routes that always exist regardless of runtime config (unlike /signup,

@@ -14,6 +14,10 @@
  * and, as a second line of defence for the "never explicitly signed out"
  * case, whenever this worker sees a different signed-in user than the last
  * one it observed (see the 'message' handler below) or a 401 from the API.
+ * The static offline fallback page lives in its own STATIC_CACHE, not
+ * SHELL_CACHE, specifically so it survives that wipe — nothing in it is
+ * personalized, and unlike /notes or /login it's never re-visited by a
+ * normal navigation, so once wiped it would otherwise never come back.
  *
  * KEEP IN SYNC with lib/pwa/sw-policy.ts — this file can't `import` that
  * TypeScript module (classic, non-bundled worker script), so the constants
@@ -25,6 +29,13 @@ const CACHE_VERSION = 'sn-v3';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 const META_CACHE = `${CACHE_VERSION}-meta`;
+// Holds *only* the offline fallback page — deliberately separate from
+// SHELL_CACHE, which sign-out (and the SW's own user-change detection)
+// wipes entirely. offline.html is never re-visited by a normal navigation
+// the way /notes or /login are, so if it lived in SHELL_CACHE it would be
+// gone for good after the very first sign-out. Nothing in it is
+// personalized, so it never needs to be cleared for privacy either.
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const OFFLINE_URL = '/offline.html';
 const PRECACHE_URLS = ['/', '/notes', '/login', '/manifest.webmanifest', OFFLINE_URL];
 const DATA_PATH_PREFIXES = ['/api/notes', '/api/folders', '/api/tags'];
@@ -47,16 +58,21 @@ function classifyRequest(req) {
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) =>
-      Promise.all(
-        PRECACHE_URLS.map((url) =>
-          cache.add(url).catch(() => {
-            // Route not available in this deployment (e.g. /signup 404s
-            // when public signup is off) — skip it, don't abort the rest.
-          }),
+    Promise.all([
+      caches.open(SHELL_CACHE).then((cache) =>
+        Promise.all(
+          PRECACHE_URLS.filter((url) => url !== OFFLINE_URL).map((url) =>
+            cache.add(url).catch(() => {
+              // Route not available in this deployment (e.g. /signup 404s
+              // when public signup is off) — skip it, don't abort the rest.
+            }),
+          ),
         ),
       ),
-    ),
+      // offline.html goes in STATIC_CACHE (see its declaration above), not
+      // SHELL_CACHE, so it survives sign-out.
+      caches.open(STATIC_CACHE).then((cache) => cache.add(OFFLINE_URL).catch(() => {})),
+    ]),
   );
   self.skipWaiting();
 });
@@ -138,10 +154,22 @@ async function handleNavigate(event, req) {
     return res;
   } catch (err) {
     const cached = await cache.match(req);
-    if (cached) return markOffline(cached);
-    const offline = await cache.match(OFFLINE_URL);
-    if (offline) return markOffline(offline);
+    if (cached) return safeMarkOffline(cached);
+    const staticCache = await caches.open(STATIC_CACHE);
+    const offline = await staticCache.match(OFFLINE_URL);
+    if (offline) return safeMarkOffline(offline);
     throw err;
+  }
+}
+
+// Never let a bug in the (cheap but not bulletproof) HTML rewrite below
+// turn a working offline fallback into a hard failure — worst case, serve
+// the cached page unmodified and skip the banner.
+async function safeMarkOffline(res) {
+  try {
+    return await markOffline(res);
+  } catch {
+    return res;
   }
 }
 
