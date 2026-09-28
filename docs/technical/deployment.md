@@ -352,11 +352,14 @@ That's the whole install. Migrations run on first boot via the entrypoint, so th
 | Tag                | Use when                                                  |
 | ------------------ | --------------------------------------------------------- |
 | `:latest`          | The most recent tagged release (recommended for prod).    |
-| `:vX.Y.Z`          | Pin to a specific release.                                |
+| `:X.Y.Z`           | Pin to a specific release (e.g. `:0.1.0` — no `v` prefix). |
+| `:X.Y` / `:X`      | Track patch / minor releases within a line.               |
 | `:main`            | Bleeding-edge; rebuilt on every commit to `main`.         |
 | `:sha-<7chars>`    | Exact reproducibility — pin to a specific commit.         |
 
 The Unraid template ships with `:latest` so you get release builds by default. Switch to `:main` only if you want to track HEAD.
+
+Every tag is a multi-arch manifest covering **`linux/amd64`** and **`linux/arm64`** — Docker pulls the right one automatically, so the same tag works on an x86 Unraid box, a Raspberry Pi 5, an Apple Silicon Mac, or an Ampere VPS. Each platform is built natively in CI (no emulation).
 
 ### File ownership
 
