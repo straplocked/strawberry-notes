@@ -15,9 +15,9 @@ Strawberry Notes ships as a Docker image plus a Postgres sidecar and a named vol
 
 Multi-stage Dockerfile:
 
-1. **`deps`** — `node:20-alpine`. Copies `package.json` + lockfile, runs `npm ci`.
+1. **`deps`** — `node:24-alpine`. Copies `package.json` + lockfile, runs `npm ci`.
 2. **`builder`** — reuses deps, copies source, runs `npm run build`. Produces `.next/standalone/` (enabled by `output: 'standalone'` in `next.config.ts`).
-3. **`runner`** — minimal `node:20-alpine`:
+3. **`runner`** — minimal `node:24-alpine`:
    - non-root user `nextjs:1001`
    - copies `.next/standalone` + `.next/static` + `public`
    - copies Drizzle runtime modules + migrations so the entrypoint can run `drizzle-kit migrate`

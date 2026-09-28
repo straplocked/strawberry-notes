@@ -59,7 +59,7 @@ Short answers to the questions operators usually ask:
 | TipTap             | Extensions churn between majors.                                                                     | Only core extensions + one in-house inline-decoration plugin used; PM JSON is stable. |
 | Postgres + pgvector| None material; pgvector is a single extension on a stable Postgres.                                  | Extension is MIT-licensed; Postgres 16 is supported through 2028.                    |
 | Embeddings provider| Operator chooses; OpenAI has rate limits, self-hosted providers have setup cost.                     | Provider-agnostic OpenAI-compatible shape; app runs fine when unset.                 |
-| Node 20            | LTS until 2026-04.                                                                                   | Bump to Node 22 LTS in the `Dockerfile` before EOL.                                  |
+| Node 24            | LTS until 2028-04.                                                                                   | Bump to Node 26 LTS in the `Dockerfile` before EOL.                                  |
 | MCP SDK            | Spec still pre-1.0; occasional API tweaks.                                                           | Thin usage (one server, one transport); spec changes touch `lib/mcp/server.ts` only. |
 
 ---
