@@ -149,19 +149,26 @@ async function handleNavigate(event, req) {
 // indistinguishable, client-side, from a normal online response — the
 // page's own fetch()es to /api/* also transparently succeed from the data
 // cache (see networkFirstData), so lib/api/client.ts never sees a
-// rejected fetch() either. Stamp a marker onto the served HTML itself
-// (rather than a header, which client-side JS has no reliable way to read
-// back for its own document) so lib/pwa/offline-fallback-marker.ts can
-// flip the app's "Offline — showing saved notes" banner on. Cheap string
+// rejected fetch() either. Stamp a marker onto the served HTML itself so
+// lib/pwa/offline-fallback-marker.ts can flip the app's
+// "Offline — showing saved notes" banner on.
+//
+// This has to be an inline <script>, not just a DOM attribute on <html>:
+// React's own client bundle loads as an async/module script and hydration
+// can reconcile away an attribute it doesn't know about before app code
+// gets a chance to read it. An inline classic <script> right at the top
+// of <head>, by contrast, is guaranteed by the HTML spec to execute
+// synchronously during parsing — before any async/module script, before
+// hydration, before anything else — so setting a plain global there is
+// the only ordering-safe way to hand this signal to the app. Cheap string
 // rewrite: these are our own precached/cached app-shell responses, never
 // third-party content.
 async function markOffline(res) {
   const contentType = res.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return res;
   const text = await res.text();
-  const marked = text.includes('<html ')
-    ? text.replace('<html ', '<html data-sn-offline="1" ')
-    : text.replace('<html>', '<html data-sn-offline="1">');
+  const marker = '<script>window.__SN_OFFLINE_FALLBACK__=true;</script>';
+  const marked = text.includes('<head>') ? text.replace('<head>', `<head>${marker}`) : marker + text;
   const headers = new Headers(res.headers);
   headers.delete('content-length');
   return new Response(marked, { status: res.status, statusText: res.statusText, headers });

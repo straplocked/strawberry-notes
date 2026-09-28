@@ -1,19 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
-  document.documentElement.removeAttribute('data-sn-offline');
+  delete window.__SN_OFFLINE_FALLBACK__;
   vi.resetModules();
 });
 
 describe('offline-fallback-marker (import side effect)', () => {
-  it('reports the offline fallback when the document carries the SW marker attribute', async () => {
-    document.documentElement.setAttribute('data-sn-offline', '1');
+  it('reports the offline fallback when window carries the SW marker global', async () => {
+    window.__SN_OFFLINE_FALLBACK__ = true;
     const { getOfflineSnapshot } = await import('./network-status');
     await import('./offline-fallback-marker');
     expect(getOfflineSnapshot()).toBe(true);
   });
 
-  it('does nothing when the marker attribute is absent (normal online load)', async () => {
+  it('does nothing when the marker global is absent (normal online load)', async () => {
     const { getOfflineSnapshot } = await import('./network-status');
     await import('./offline-fallback-marker');
     expect(getOfflineSnapshot()).toBe(false);

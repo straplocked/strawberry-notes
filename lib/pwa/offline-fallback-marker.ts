@@ -14,13 +14,27 @@ import { reportOfflineFallbackServed } from './network-status';
  * perfectly "online" while only the app's own server is unreachable
  * (exactly what a killed/crashed backend container looks like). The SW is
  * the only thing that actually knows a live fetch failed, so it stamps
- * `data-sn-offline` onto the HTML it serves instead of the marker relying
- * on the client to (incorrectly) infer offline-ness itself.
+ * `window.__SN_OFFLINE_FALLBACK__` onto the HTML it serves instead of the
+ * marker relying on the client to (incorrectly) infer offline-ness itself.
  *
- * Import this module for its side effect, as early as possible (see
- * components/app/Providers.tsx), so the check runs before/alongside
- * hydration rather than after some indeterminate delay.
+ * The marker is set by an inline <script> at the very top of <head> in
+ * the served HTML (see markOffline() in public/sw.js), not a DOM
+ * attribute — an attribute on <html> can get reconciled away by React
+ * hydration before this module's import even runs, since React's bundle
+ * loads as an async/module script. A classic inline script, by contrast,
+ * is guaranteed to execute synchronously during HTML parsing, before any
+ * async/module script and before hydration — so it's the only
+ * ordering-safe way to hand this signal to app code. Import this module
+ * for its own side effect, as early as possible (see
+ * components/app/Providers.tsx), so the check runs alongside hydration
+ * rather than after some indeterminate delay.
  */
-if (typeof document !== 'undefined' && document.documentElement.hasAttribute('data-sn-offline')) {
+declare global {
+  interface Window {
+    __SN_OFFLINE_FALLBACK__?: boolean;
+  }
+}
+
+if (typeof window !== 'undefined' && window.__SN_OFFLINE_FALLBACK__ === true) {
   reportOfflineFallbackServed();
 }
