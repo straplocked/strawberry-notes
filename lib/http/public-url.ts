@@ -44,3 +44,34 @@ export function getPublicBaseUrl(
 
   return 'http://localhost:3200';
 }
+
+/**
+ * Whether the *actual* inbound request arrived over HTTPS. Use this to decide
+ * a cookie's `Secure` attribute — it must match the real transport, not
+ * `NODE_ENV` and not the canonical `AUTH_URL`. A `Secure` cookie set over
+ * plain HTTP is silently dropped by the browser, which is exactly what breaks
+ * the TOTP flow on LAN/HTTP self-hosted instances.
+ *
+ * Mirrors how Auth.js derives `useSecureCookies` from the request. Defaults to
+ * `false` (non-secure) when the proto can't be determined, so cookies are
+ * never lost on a legitimate HTTP origin.
+ */
+export function isSecureRequest(
+  input?: Request | { headers: Headers; url?: string } | Headers | null,
+): boolean {
+  if (!input) return false;
+  // Accept a bare Headers (e.g. `await headers()` in a route/authorize) or a
+  // Request-like carrying its own headers + url.
+  const headers = 'get' in input ? (input as Headers) : input.headers;
+  const url = 'url' in input ? input.url : undefined;
+  const fwdProto = headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  if (fwdProto) return fwdProto === 'https';
+  if (url) {
+    try {
+      return new URL(url).protocol === 'https:';
+    } catch {
+      // Malformed url — fall through to the non-secure default.
+    }
+  }
+  return false;
+}

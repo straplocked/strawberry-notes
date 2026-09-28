@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { getPublicBaseUrl } from './public-url';
+import { getPublicBaseUrl, isSecureRequest } from './public-url';
 
 const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
 
@@ -85,5 +85,41 @@ describe('getPublicBaseUrl', () => {
     // Reach for a Headers instance with nothing host-related populated.
     const req = { headers: new Headers({ 'x-other': 'value' }) };
     expect(getPublicBaseUrl(req)).toBe('http://localhost:3200');
+  });
+});
+
+describe('isSecureRequest', () => {
+  it('is false for direct HTTP LAN access (so the cookie is not dropped)', () => {
+    expect(isSecureRequest(makeReq({ host: '192.168.1.9:3200' }))).toBe(false);
+  });
+
+  it('is true behind a TLS-terminating proxy (X-Forwarded-Proto: https)', () => {
+    expect(
+      isSecureRequest(makeReq({ 'x-forwarded-proto': 'https', host: 'app:3000' })),
+    ).toBe(true);
+  });
+
+  it('honours the leftmost value of a comma-separated X-Forwarded-Proto', () => {
+    expect(isSecureRequest(makeReq({ 'x-forwarded-proto': 'https, http' }))).toBe(true);
+    expect(isSecureRequest(makeReq({ 'x-forwarded-proto': 'http, https' }))).toBe(false);
+  });
+
+  it('infers https from the request URL when no forwarded header is present', () => {
+    expect(
+      isSecureRequest(makeReq({ host: 'notes.example.com' }, 'https://notes.example.com/x')),
+    ).toBe(true);
+    expect(
+      isSecureRequest(makeReq({ host: 'notes.example.com' }, 'http://notes.example.com/x')),
+    ).toBe(false);
+  });
+
+  it('accepts a bare Headers instance (as returned by next/headers)', () => {
+    expect(isSecureRequest(new Headers({ 'x-forwarded-proto': 'https' }))).toBe(true);
+    expect(isSecureRequest(new Headers({ 'x-forwarded-proto': 'http' }))).toBe(false);
+  });
+
+  it('defaults to false (non-secure) when nothing indicates the proto', () => {
+    expect(isSecureRequest()).toBe(false);
+    expect(isSecureRequest(new Headers())).toBe(false);
   });
 });
