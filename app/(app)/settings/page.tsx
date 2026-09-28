@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppearanceSection } from '@/components/app/settings/AppearanceSection';
+import { InstallAppSection } from '@/components/app/settings/InstallAppSection';
 import { EmailPreferencesSection } from '@/components/app/settings/EmailPreferencesSection';
 import { McpClientsSection } from '@/components/app/settings/McpClientsSection';
 import { PrivateNotesSection } from '@/components/app/settings/PrivateNotesSection';
@@ -48,6 +49,7 @@ export default function SettingsPage() {
         </h1>
       </header>
       <AppearanceSection />
+      <InstallAppSection />
       <SecuritySection />
       <PrivateNotesSection />
       <TagsSection />

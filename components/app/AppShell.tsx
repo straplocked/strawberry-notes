@@ -35,6 +35,8 @@ import type { FolderDTO, NoteListItemDTO, PMDoc } from '@/lib/types';
 import { usePrivateNotesStore } from '@/lib/store/private-notes-store';
 import { PrivateNotesUnlockModal } from './settings/PrivateNotesUnlockModal';
 import { PrivateNotesSetupModal } from './settings/PrivateNotesSetupModal';
+import { OfflineBanner } from './OfflineBanner';
+import { clearSessionCaches, notifyServiceWorkerLogout } from '@/lib/pwa/clear-session-caches';
 
 type ConfirmState =
   | { kind: 'folder'; folder: FolderDTO }
@@ -418,6 +420,14 @@ export function AppShell() {
 
   async function onSignOut() {
     const t = dtime('ui', 'click: sign out');
+    // Privacy: drop cached note/folder/tag API responses and cached
+    // navigations *before* the session actually ends, so a shared device's
+    // next sign-in (even by the same user) never has a stale, previously
+    // cached response to serve. Also tell the SW directly (belt-and-braces
+    // — see public/sw.js's SN_LOGOUT handler) in case something else reads
+    // from its caches before the direct delete below is visible to it.
+    await clearSessionCaches();
+    notifyServiceWorkerLogout();
     await signOut({ redirect: false });
     router.push('/login');
     router.refresh();
@@ -898,6 +908,7 @@ export function AppShell() {
   return (
     <>
       {content}
+      <OfflineBanner />
       {!isMobile && <TweaksPanel />}
       <ConfirmDialog
         open={confirmState?.kind === 'folder'}

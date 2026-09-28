@@ -1,86 +1,265 @@
-/* Strawberry Notes — minimal PWA service worker.
+/* Strawberry Notes — PWA service worker.
  *
- * Shell precache + network-first for API GETs. The previous SWR strategy
- * served stale counts on refresh even when the client was online; network-
- * first keeps online users honest, and cached responses still cover short
- * offline windows. Edits are not queued in v1 — failed PATCH/POSTs surface
- * to the UI.
+ * Shell precache + network-first for API GETs, network-first for
+ * navigations (falling back to an exact cached match or the static offline
+ * page — never to an unrelated stale page), cache-first only for
+ * content-hashed /_next/static/* assets, and network-first for everything
+ * else static (icons, manifest, offline.html) so those aren't stuck stale
+ * after a deploy. Edits are not queued in v1 — failed PATCH/POSTs surface
+ * to the UI as an offline indicator instead.
+ *
+ * Privacy: the data cache (note/folder/tag API responses) and the shell
+ * cache (cached navigations) are wiped on sign-out (see
+ * lib/pwa/clear-session-caches.ts, called from AppShell's sign-out flow)
+ * and, as a second line of defence for the "never explicitly signed out"
+ * case, whenever this worker sees a different signed-in user than the last
+ * one it observed (see the 'message' handler below) or a 401 from the API.
+ * The static offline fallback page lives in its own STATIC_CACHE, not
+ * SHELL_CACHE, specifically so it survives that wipe — nothing in it is
+ * personalized, and unlike /notes or /login it's never re-visited by a
+ * normal navigation, so once wiped it would otherwise never come back.
+ *
+ * KEEP IN SYNC with lib/pwa/sw-policy.ts — this file can't `import` that
+ * TypeScript module (classic, non-bundled worker script), so the constants
+ * and classification logic are duplicated here. lib/pwa/sw-sync.test.ts
+ * asserts the two don't drift.
  */
 
-const CACHE_VERSION = 'sn-v2';
+const CACHE_VERSION = 'sn-v3';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
-const PRECACHE = ['/', '/notes', '/login', '/signup', '/manifest.webmanifest'];
+const META_CACHE = `${CACHE_VERSION}-meta`;
+// Holds *only* the offline fallback page — deliberately separate from
+// SHELL_CACHE, which sign-out (and the SW's own user-change detection)
+// wipes entirely. offline.html is never re-visited by a normal navigation
+// the way /notes or /login are, so if it lived in SHELL_CACHE it would be
+// gone for good after the very first sign-out. Nothing in it is
+// personalized, so it never needs to be cleared for privacy either.
+const STATIC_CACHE = `${CACHE_VERSION}-static`;
+const OFFLINE_URL = '/offline.html';
+const PRECACHE_URLS = ['/', '/notes', '/login', '/manifest.webmanifest', OFFLINE_URL];
+const DATA_PATH_PREFIXES = ['/api/notes', '/api/folders', '/api/tags'];
+const USER_MARKER_URL = 'https://sn-sw-meta.invalid/current-user';
+
+function classifyRequest(req) {
+  if (req.method !== 'GET') return 'ignore';
+  if (!req.sameOrigin) return 'ignore';
+  let pathname;
+  try {
+    pathname = new URL(req.url).pathname;
+  } catch {
+    return 'ignore';
+  }
+  if (DATA_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return 'data';
+  if (req.mode === 'navigate') return 'navigate';
+  if (pathname.startsWith('/_next/static/')) return 'static-hashed';
+  return 'static-other';
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((c) =>
-      c.addAll(PRECACHE).catch(() => {
-        /* ignore missing */
-      }),
-    ),
+    Promise.all([
+      caches.open(SHELL_CACHE).then((cache) =>
+        Promise.all(
+          PRECACHE_URLS.filter((url) => url !== OFFLINE_URL).map((url) =>
+            cache.add(url).catch(() => {
+              // Route not available in this deployment (e.g. /signup 404s
+              // when public signup is off) — skip it, don't abort the rest.
+            }),
+          ),
+        ),
+      ),
+      // offline.html goes in STATIC_CACHE (see its declaration above), not
+      // SHELL_CACHE, so it survives sign-out.
+      caches.open(STATIC_CACHE).then((cache) => cache.add(OFFLINE_URL).catch(() => {})),
+    ]),
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => !k.startsWith(CACHE_VERSION))
-          .map((k) => caches.delete(k)),
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k))),
       ),
-    ),
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
-
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
-
-  // API: network-first so fresh data wins whenever online; cached response
-  // is only returned when the network fails.
-  if (
-    url.pathname.startsWith('/api/notes') ||
-    url.pathname.startsWith('/api/folders') ||
-    url.pathname.startsWith('/api/tags')
-  ) {
-    event.respondWith(networkFirst(req, DATA_CACHE));
-    return;
+  let sameOrigin = false;
+  try {
+    sameOrigin = new URL(req.url).origin === self.location.origin;
+  } catch {
+    sameOrigin = false;
   }
+  const strategy = classifyRequest({ method: req.method, url: req.url, mode: req.mode, sameOrigin });
 
-  // Navigation: network-first, fall back to shell cache.
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req).then((r) => r || caches.match('/notes'))),
-    );
-    return;
+  if (strategy === 'data') {
+    event.respondWith(networkFirstData(event, req));
+  } else if (strategy === 'navigate') {
+    event.respondWith(handleNavigate(event, req));
+  } else if (strategy === 'static-hashed') {
+    event.respondWith(cacheFirstHashed(event, req));
+  } else if (strategy === 'static-other') {
+    event.respondWith(networkFirstStatic(event, req));
   }
-
-  // Static assets: cache-first.
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req)),
-  );
+  // 'ignore' — don't call respondWith; let the browser handle it normally.
 });
 
-function networkFirst(req, cacheName) {
-  return caches.open(cacheName).then((cache) =>
-    fetch(req)
-      .then((res) => {
-        if (res.ok) cache.put(req, res.clone());
-        return res;
-      })
-      .catch(() => cache.match(req)),
-  );
+// Every strategy below threads the fetch `event` through so any cache
+// write that shouldn't block the response is wrapped in
+// event.waitUntil(...) instead of being a bare unawaited promise. Without
+// that, the browser is free to suspend/terminate the worker the instant
+// respondWith()'s promise resolves — a fire-and-forget cache.put() can
+// lose the race and never actually persist, silently defeating both the
+// offline-read feature and (for the data cache specifically) this SW's
+// own privacy bookkeeping.
+
+// API: network-first so fresh data wins whenever online; cached response
+// covers short offline windows. A 401 means the session ended (sign-out
+// elsewhere, expired cookie) — never cache it, and proactively drop
+// whatever was cached so a *different* user signing in on this device
+// afterward can't be served the previous user's notes offline.
+async function networkFirstData(event, req) {
+  const cache = await caches.open(DATA_CACHE);
+  try {
+    const res = await fetch(req);
+    if (res.status === 401) {
+      event.waitUntil(cache.keys().then((keys) => Promise.all(keys.map((k) => cache.delete(k)))));
+      return res;
+    }
+    if (res.ok) event.waitUntil(cache.put(req, res.clone()));
+    return res;
+  } catch (err) {
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    throw err;
+  }
+}
+
+// Navigation: network-first. On failure, only serve back the *same* page
+// if we already have it cached (the legitimate "read my own recent notes
+// offline" case) — never a different, unrelated cached page. With nothing
+// relevant cached, fall back to the static offline page instead of staying
+// silent about it.
+async function handleNavigate(event, req) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const res = await fetch(req);
+    event.waitUntil(cache.put(req, res.clone()));
+    return res;
+  } catch (err) {
+    const cached = await cache.match(req);
+    if (cached) return safeMarkOffline(cached);
+    const staticCache = await caches.open(STATIC_CACHE);
+    const offline = await staticCache.match(OFFLINE_URL);
+    if (offline) return safeMarkOffline(offline);
+    throw err;
+  }
+}
+
+// Never let a bug in the (cheap but not bulletproof) HTML rewrite below
+// turn a working offline fallback into a hard failure — worst case, serve
+// the cached page unmodified and skip the banner.
+async function safeMarkOffline(res) {
+  try {
+    return await markOffline(res);
+  } catch {
+    return res;
+  }
+}
+
+// A cached page served in place of a failed live fetch is otherwise
+// indistinguishable, client-side, from a normal online response — the
+// page's own fetch()es to /api/* also transparently succeed from the data
+// cache (see networkFirstData), so lib/api/client.ts never sees a
+// rejected fetch() either. Stamp a marker onto the served HTML itself so
+// lib/pwa/offline-fallback-marker.ts can flip the app's
+// "Offline — showing saved notes" banner on.
+//
+// This has to be an inline <script>, not just a DOM attribute on <html>:
+// React's own client bundle loads as an async/module script and hydration
+// can reconcile away an attribute it doesn't know about before app code
+// gets a chance to read it. An inline classic <script> right at the top
+// of <head>, by contrast, is guaranteed by the HTML spec to execute
+// synchronously during parsing — before any async/module script, before
+// hydration, before anything else — so setting a plain global there is
+// the only ordering-safe way to hand this signal to the app. Cheap string
+// rewrite: these are our own precached/cached app-shell responses, never
+// third-party content.
+async function markOffline(res) {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) return res;
+  const text = await res.text();
+  const marker = '<script>window.__SN_OFFLINE_FALLBACK__=true;</script>';
+  const marked = text.includes('<head>') ? text.replace('<head>', `<head>${marker}`) : marker + text;
+  const headers = new Headers(res.headers);
+  // res.text() already gave us the decoded body — strip any transport
+  // framing headers describing the *original* encoded transfer so the
+  // browser doesn't try to gunzip a body that's no longer gzipped (or
+  // frame it by a content-length that no longer matches).
+  headers.delete('content-length');
+  headers.delete('content-encoding');
+  return new Response(marked, { status: res.status, statusText: res.statusText, headers });
+}
+
+// Hashed /_next/static/* chunks are content-addressed and therefore safe to
+// cache-first — a new deploy ships new filenames, it never mutates an old
+// one, so there's no staleness risk.
+async function cacheFirstHashed(event, req) {
+  const cache = await caches.open(SHELL_CACHE);
+  const cached = await cache.match(req);
+  if (cached) return cached;
+  const res = await fetch(req);
+  if (res.ok) event.waitUntil(cache.put(req, res.clone()));
+  return res;
+}
+
+// Everything else static (icons, manifest, offline.html itself) is NOT
+// content-hashed, so it must not be cache-first forever — network-first
+// keeps it fresh after a deploy while still working offline.
+async function networkFirstStatic(event, req) {
+  const cache = await caches.open(SHELL_CACHE);
+  try {
+    const res = await fetch(req);
+    if (res.ok) event.waitUntil(cache.put(req, res.clone()));
+    return res;
+  } catch (err) {
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    throw err;
+  }
+}
+
+// The client posts the current signed-in user's id on every session load
+// (see lib/pwa/session-sw-sync.ts). If it's different from the last user
+// this worker observed, a different person signed in on this device
+// without an explicit sign-out ever reaching us (browser closed, session
+// cookie cleared some other way, etc.) — wipe the data + shell caches so
+// they can't be served the previous user's notes.
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+  if (data.type === 'SN_SESSION' && typeof data.userId === 'string' && data.userId) {
+    event.waitUntil(handleSessionUser(data.userId));
+  } else if (data.type === 'SN_LOGOUT') {
+    event.waitUntil(
+      Promise.all([caches.delete(SHELL_CACHE), caches.delete(DATA_CACHE)]),
+    );
+  }
+});
+
+async function handleSessionUser(userId) {
+  const metaCache = await caches.open(META_CACHE);
+  const markerReq = new Request(USER_MARKER_URL);
+  const existing = await metaCache.match(markerReq);
+  const storedUserId = existing ? await existing.text() : null;
+  if (storedUserId && storedUserId !== userId) {
+    await Promise.all([caches.delete(SHELL_CACHE), caches.delete(DATA_CACHE)]);
+  }
+  await metaCache.put(markerReq, new Response(userId));
 }
