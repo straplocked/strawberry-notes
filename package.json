@@ -20,6 +20,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:embed": "tsx scripts/embed-backfill.ts",
+    "icons:generate": "node scripts/generate-pwa-icons.mjs",
     "user:create": "tsx scripts/create-user.ts",
     "user:reset": "tsx scripts/reset-password.ts",
     "user:promote": "tsx scripts/promote-user.ts",
@@ -55,6 +56,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",

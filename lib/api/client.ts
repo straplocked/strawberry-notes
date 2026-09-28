@@ -1,4 +1,5 @@
 import { dtime } from '../debug';
+import { reportNetworkFailure, reportNetworkSuccess } from '../pwa/network-status';
 import type {
   BacklinkDTO,
   FolderDTO,
@@ -28,8 +29,20 @@ async function req<T>(
   parseJson: boolean = true,
 ): Promise<T> {
   const t = dtime('net', `${method} ${url}`);
+  let res: Response;
   try {
-    const res = await fetch(url, { method, ...init });
+    res = await fetch(url, { method, ...init });
+  } catch (err) {
+    // fetch() itself rejected — offline, DNS failure, connection refused.
+    // Distinct from a normal (even non-ok) HTTP response, which means the
+    // network is fine and the server just said no. Drives the app's
+    // offline indicator (lib/pwa/network-status.ts).
+    t.end({ error: (err as Error).message });
+    reportNetworkFailure(err);
+    throw err;
+  }
+  reportNetworkSuccess();
+  try {
     const out = parseJson ? await json<T>(res) : (undefined as unknown as T);
     t.end({ status: res.status });
     return out;

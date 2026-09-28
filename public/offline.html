@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Offline — Strawberry Notes</title>
+    <meta name="theme-color" content="#15100f" />
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #15100f;
+        --surface: #1e1816;
+        --ink: #f5ebe5;
+        --ink-3: #9a8880;
+        --berry: #e33d4e;
+        --hair: #332623;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #faf5f1;
+          --surface: #ffffff;
+          --ink: #1e110f;
+          --ink-3: #7a5a52;
+          --hair: #ecdfd7;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        padding: 24px;
+      }
+      .card {
+        max-width: 360px;
+        text-align: center;
+      }
+      .mark {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 20px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      p {
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--ink-3);
+        margin: 0 0 20px;
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--hair);
+        background: var(--surface);
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 600;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--berry);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg class="mark" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path
+          d="M24 44 C 12 44, 6 32, 7 24 C 8 18, 13 14, 18 13 C 20.5 12.5, 22 13, 24 13 C 26 13, 27.5 12.5, 30 13 C 35 14, 40 18, 41 24 C 42 32, 36 44, 24 44 Z"
+          fill="#e33d4e"
+        />
+        <path
+          d="M24 13 C 20 8, 14 7, 11 10 C 14 10, 18 12, 20 14 Z"
+          fill="#5fae6a"
+        />
+        <path
+          d="M24 13 C 28 8, 34 7, 37 10 C 34 10, 30 12, 28 14 Z"
+          fill="#5fae6a"
+        />
+      </svg>
+      <h1>You're offline</h1>
+      <p>
+        This page hasn't been saved for offline reading yet. Notes you've already opened while
+        online may still be available — try going back.
+      </p>
+      <button onclick="location.reload()">Try again</button>
+    </div>
+  </body>
+</html>
