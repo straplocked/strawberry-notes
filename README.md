@@ -52,18 +52,32 @@ The differentiation is **not** "more features than Obsidian" — it's that every
 ## Quickstart
 
 ```bash
-cp .env.example .env                          # edit AUTH_SECRET (required)
-openssl rand -base64 32                       # → paste into AUTH_SECRET
+cp .env.example .env
 docker compose up -d
-docker compose exec app npm run user:create -- you@example.com   # provision yourself
 open http://localhost:3200
 ```
 
-The deployment **does not accept public signups by default** — the operator
-provisions accounts with `npm run user:create`. To open registration, set
-`ALLOW_PUBLIC_SIGNUP=true` in `.env`.
+That's it — no `openssl`, no `.env` edits, no CLI step. `AUTH_SECRET` is
+generated for you on first boot and kept in the `uploads` volume. Visiting
+the app for the first time lands you on a one-time setup page; grab the
+setup code it asks for from the container log:
 
-Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (image attachments).
+```bash
+docker compose logs app | grep -A2 "setup code"
+```
+
+Enter the code, pick an email + password, and you're in as the admin.
+Optional: want semantic search out of the box with no external API key?
+`docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d`
+instead — it bundles a local Ollama server with a 1024-dim embedding model
+pre-configured.
+
+After that first admin account exists, the deployment **does not accept
+public signups** — further accounts are provisioned with
+`npm run user:create` (see below), unless you set `ALLOW_PUBLIC_SIGNUP=true`
+in `.env` to open registration to anyone.
+
+Your data persists in two named volumes: `pgdata` (Postgres) and `uploads` (image attachments, and the generated `AUTH_SECRET`).
 
 ### Unraid (no commands)
 
@@ -77,7 +91,9 @@ https://raw.githubusercontent.com/straplocked/strawberry-notes/main/unraid/straw
 ```
 
 Bring your own Postgres (16+ with `pgvector`); the form fields walk you
-through `DATABASE_URL`, `AUTH_SECRET`, and the uploads host path. Full
+through `DATABASE_URL` and the uploads host path. Leave `AUTH_SECRET` blank
+— it's generated on first boot — then grab the setup code from the
+container's log and finish setup in the browser, same as above. Full
 walk-through: [docs/technical/deployment.md#unraid](docs/technical/deployment.md#unraid).
 
 ### Operator commands

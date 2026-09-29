@@ -1,6 +1,7 @@
 import { headers, cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isPublicSignupEnabled } from '@/lib/auth/signup-policy';
+import { isSetupModeActive } from '@/lib/auth/bootstrap';
 import {
   getOidcLabel,
   isOidcEnabled,
@@ -18,6 +19,11 @@ export default async function LoginPage() {
   // In proxy mode, the upstream forward-auth proxy already authed the user.
   // Showing our own /login is confusing and pointless — redirect into the app.
   if (isProxyAuthEnabled()) redirect('/notes');
+
+  // Zero-config first run: no users yet, and this instance can create one
+  // via first-party signup. Send the operator straight to the setup-code
+  // flow instead of a login form for an account that doesn't exist.
+  if (await isSetupModeActive()) redirect('/signup');
 
   const jar = await cookies();
   const hasMfaPending = !!jar.get(MFA_PENDING_COOKIE);

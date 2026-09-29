@@ -1,5 +1,11 @@
 services:
   app:
+    # `image` first so `docker compose up` (no `--build`) pulls the published
+    # multi-arch image when it isn't cached locally yet — a fresh clone with
+    # no local build needed. `build` stays alongside it for anyone changing
+    # the Dockerfile: `docker compose build` still works, and Compose only
+    # falls back to building when the pull itself fails.
+    image: ghcr.io/straplocked/strawberry-notes:latest
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -7,14 +13,18 @@ services:
       # (see docker/aio/), which would otherwise be the default build target
       # (Docker builds the LAST stage when none is given).
       target: runner
-    image: strawberry-notes:latest
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://strawberry:${POSTGRES_PASSWORD:-strawberry}@postgres:5432/strawberry
-      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      # Optional. When unset, the entrypoint generates one into the `uploads`
+      # volume at /data/.auth_secret on first boot and reuses it on every
+      # restart — a fresh `docker compose up` with no .env at all still
+      # works. Set it explicitly to pin the value yourself (e.g. so it's
+      # portable across a volume you don't control).
+      AUTH_SECRET: ${AUTH_SECRET:-}
       # Optional. When unset, email links and Auth.js callbacks auto-derive
       # from the request host (LAN IP / X-Forwarded-Host). Set explicitly
       # for production behind a TLS proxy that strips X-Forwarded-* headers.
@@ -58,6 +68,16 @@ services:
       PROXY_AUTH_EMAIL_HEADER: ${PROXY_AUTH_EMAIL_HEADER:-x-authentik-email}
       PROXY_AUTH_SHARED_SECRET: ${PROXY_AUTH_SHARED_SECRET:-}
       PROXY_AUTH_LOGOUT_URL: ${PROXY_AUTH_LOGOUT_URL:-}
+      # Comma-separated CIDRs allowed to send the trusted proxy-auth header,
+      # checked against the connecting socket peer. Only meaningful with
+      # PROXY_AUTH=true; leave unset otherwise.
+      PROXY_AUTH_TRUSTED_IPS: ${PROXY_AUTH_TRUSTED_IPS:-}
+      # Public signup / zero-config first run. Leave unset (false): the
+      # first visit to /login is redirected to a one-time setup-code flow
+      # (code printed in `docker compose logs app`) to create the admin
+      # account, after which further signups are closed again automatically.
+      # Set to `true` only if you want an instance strangers can register on.
+      ALLOW_PUBLIC_SIGNUP: ${ALLOW_PUBLIC_SIGNUP:-false}
     ports:
       # Host port 3200 chosen to avoid collisions with other local containers
       # (3000 / 3100 were already in use). Override via APP_PORT in .env.
