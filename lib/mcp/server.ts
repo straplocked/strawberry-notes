@@ -33,17 +33,22 @@ function jsonResult(value: unknown) {
  *
  * MCP callers — by definition bearer-token-only (the route gates session
  * cookies in [app/api/mcp/route.ts](../../app/api/mcp/route.ts)) — never see
- * the user's Private Notes. Every read tool below threads
- * `includePrivate: false` into the underlying service call. The session
- * (browser) read paths still see private notes via the same service
- * functions, called from the `/api/notes/*` route handlers.
+ * the user's Private Notes, and can't touch one by id either. Every read
+ * tool below threads `includePrivate: false` into the underlying service
+ * call, and so do the write tools (`update_note`, `delete_note`, `add_tag`,
+ * `remove_tag`) — the service layer enforces the exclusion in the SQL
+ * `WHERE`, so a write aimed at a private note id affects zero rows and
+ * reads back as "not found", indistinguishable from an id that doesn't
+ * exist. The session (browser) read/write paths still reach private notes
+ * via the same service functions, called from the `/api/notes/*` route
+ * handlers with the default `includePrivate: true`.
  */
 export function buildMcpServer(userId: string): McpServer {
   const server = new McpServer({ name: 'strawberry-notes', version: '1.0.0' });
 
-  // Bound once so each tool body just spreads it into its options arg.
-  // Renaming this to `MCP_READ_OPTS` would be more dramatic but the call
-  // sites read fine with the current name.
+  // Bound once so each tool body just spreads it into its options arg. Used
+  // by both read tools and write tools (update/delete/add_tag/remove_tag) —
+  // the name predates the write-side enforcement but the shape is identical.
   const mcpReadOpts = { includePrivate: false } as const;
 
   server.registerTool(
@@ -181,14 +186,19 @@ export function buildMcpServer(userId: string): McpServer {
       },
     },
     async ({ id, title, markdown, folderId, pinned, tagNames, trashed }) => {
-      const fresh = await updateNote(userId, id, {
-        title,
-        content: markdown !== undefined ? markdownToDoc(markdown) : undefined,
-        folderId,
-        pinned,
-        tagNames,
-        trashed,
-      });
+      const fresh = await updateNote(
+        userId,
+        id,
+        {
+          title,
+          content: markdown !== undefined ? markdownToDoc(markdown) : undefined,
+          folderId,
+          pinned,
+          tagNames,
+          trashed,
+        },
+        mcpReadOpts,
+      );
       if (!fresh) return { ...textResult('not found'), isError: true };
       return jsonResult({
         id: fresh.id,
@@ -213,7 +223,7 @@ export function buildMcpServer(userId: string): McpServer {
       },
     },
     async ({ id, hard }) => {
-      const ok = await deleteNote(userId, id, { hard: !!hard });
+      const ok = await deleteNote(userId, id, { hard: !!hard, ...mcpReadOpts });
       if (!ok) return { ...textResult('not found'), isError: true };
       return jsonResult({ id, deleted: hard ? 'hard' : 'soft' });
     },
@@ -337,7 +347,7 @@ export function buildMcpServer(userId: string): McpServer {
       },
     },
     async ({ noteId, name }) => {
-      const tagId = await addTagToNote(userId, noteId, name);
+      const tagId = await addTagToNote(userId, noteId, name, mcpReadOpts);
       if (!tagId) return { ...textResult('note not found'), isError: true };
       return jsonResult({ noteId, tagId });
     },
@@ -353,7 +363,7 @@ export function buildMcpServer(userId: string): McpServer {
       },
     },
     async ({ noteId, name }) => {
-      const ok = await removeTagFromNote(userId, noteId, name);
+      const ok = await removeTagFromNote(userId, noteId, name, mcpReadOpts);
       if (!ok) return { ...textResult('note not found'), isError: true };
       return jsonResult({ noteId, name });
     },

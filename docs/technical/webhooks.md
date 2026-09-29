@@ -18,7 +18,7 @@ This is the v1.4 Tier 1.1 feature; see [../leadership/roadmap.md](../leadership/
 | `note.tagged`   | A tag is added to a note via the `add_tag` MCP tool or `POST /api/notes/:id/tags`. Idempotent. | `note: WebhookNoteRef`, `tag: { id, name }`                |
 | `note.linked`   | A `[[wiki-link]]` *resolves* to an existing note for the first time.                       | `source: WebhookNoteRef`, `target: WebhookNoteRef`              |
 
-`WebhookNoteRef` is the slim shape `{ id, title, folderId, pinned, tagIds, updatedAt }`. Consumers wanting the full body call back via `GET /api/notes/:id` with their personal access token.
+`WebhookNoteRef` is the slim shape `{ id, title, folderId, pinned, tagIds, updatedAt, private }`. Consumers wanting the full body call back via `GET /api/notes/:id` with their personal access token — which itself returns `not found` for a Private Notes id (see [private-notes.md](private-notes.md)). For a private note, `title` is sent as `""` and `private` is `true`: a webhook target is a third-party endpoint the operator configured, not the user's own browser session, so it doesn't get the plaintext title the in-app list view relies on.
 
 ### Why these five and not more
 
@@ -45,7 +45,7 @@ X-Strawberry-Signature: sha256=<hex>
   "event": "note.created",
   "timestamp": "2026-04-29T01:23:45.678Z",
   "userId": "<uuid>",
-  "note": { "id": "...", "title": "...", "folderId": null, "pinned": false, "tagIds": [], "updatedAt": "..." }
+  "note": { "id": "...", "title": "...", "folderId": null, "pinned": false, "tagIds": [], "updatedAt": "...", "private": false }
 }
 ```
 

@@ -51,6 +51,7 @@ const payload: NoteCreatedPayload = {
     pinned: false,
     tagIds: [],
     updatedAt: '2026-04-29T00:00:00.000Z',
+    private: false,
   },
 };
 

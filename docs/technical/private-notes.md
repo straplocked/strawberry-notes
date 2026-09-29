@@ -154,11 +154,32 @@ this recovery code somewhere safe." The friction is deliberate.
 | Browser session (owner) | Yes               | Yes (after unlock)   |
 | MCP bearer token     | No                   | No                   |
 | Web clipper bearer   | No                   | No                   |
-| Operator with `psql` | Yes (titles plaintext) | No (ciphertext) |
-| Operator with `pg_dump` backup | Yes        | No                   |
+| Operator with `psql` | Yes — title, folder placement, tags, and timestamps (`createdAt`/`updatedAt`/`trashedAt`) are all plaintext columns, same as any other note | No (ciphertext) |
+| Operator with `pg_dump` backup | Yes (same fields as above) | No                   |
 | Workspace ZIP export | Yes (in manifest)    | No (as `.encrypted.json`) |
 | Embedding provider   | Never embedded       | Never embedded       |
 | FTS / `to_tsquery`   | Title only           | No (content_text empty) |
+
+The operator row is worth stating plainly, not just implying from the
+"What's encrypted" table above: `SELECT title, folder_id, updated_at FROM
+notes WHERE encryption IS NOT NULL` returns real, readable values for every
+private note. Only `content` (ciphertext) and the four fields the service
+layer forces empty/false/NULL are hidden. This is the metadata trade-off the
+top of this document describes, not an oversight.
+
+**Images are not part of this encryption boundary at all.** An image
+embedded in a note — private or not — is uploaded to `UPLOAD_DIR` as a plain
+file (`app/api/uploads/route.ts` writes the raw bytes; there is no
+per-attachment encryption step). Locking a note encrypts `notes.content` —
+the ProseMirror JSON, which for an embedded image is just a `<UPLOAD_DIR>`
+URL reference — but the image bytes themselves sit on disk unencrypted and
+remain reachable at `/api/uploads/:id` to anyone who can reach that route
+with the owning user's session. If your threat model includes "operator
+with filesystem access to `UPLOAD_DIR`," treat images the same as you would
+treat title/folder/tags/dates above: visible, not protected by Private
+Notes. Full-disk or volume-level encryption (see
+[deployment.md](deployment.md#database-at-rest)) is what covers this, same
+as it covers plaintext note bodies.
 
 ---
 

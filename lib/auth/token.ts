@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/client';
-import { apiTokens } from '../db/schema';
+import { apiTokens, users } from '../db/schema';
 import { notifyTokenCreated } from '../email/notifications';
 
 const TOKEN_PREFIX = 'snb_';
@@ -57,11 +57,23 @@ export async function verifyBearerToken(
   raw: string,
 ): Promise<{ userId: string; tokenId: string } | null> {
   if (!raw || !raw.startsWith(TOKEN_PREFIX)) return null;
+  // Join `users` and reject when the account is disabled. An admin disabling
+  // a user (`lib/auth/user-admin.ts`) is meant to immediately cut off *every*
+  // way in — the credentials provider already checks `disabledAt` on every
+  // sign-in (`lib/auth.ts`) and proxy-mode re-checks it per request
+  // (`lib/auth/require.ts`) — but a long-lived API token issued before the
+  // account was disabled has no session to expire; without this check it
+  // would keep working indefinitely.
   const [row] = await db
-    .select({ id: apiTokens.id, userId: apiTokens.userId })
+    .select({
+      id: apiTokens.id,
+      userId: apiTokens.userId,
+      disabledAt: users.disabledAt,
+    })
     .from(apiTokens)
+    .innerJoin(users, eq(users.id, apiTokens.userId))
     .where(and(eq(apiTokens.tokenHash, hash(raw)), isNull(apiTokens.revokedAt)));
-  if (!row) return null;
+  if (!row || row.disabledAt) return null;
   // Fire-and-forget: update lastUsedAt. Ignore errors.
   db.update(apiTokens)
     .set({ lastUsedAt: new Date() })
