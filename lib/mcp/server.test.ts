@@ -13,11 +13,33 @@ const calls: {
     opts?: { includePrivate?: boolean; k?: number };
   }>;
   listBacklinks: Array<{ userId: string; id: string; opts?: { includePrivate?: boolean } }>;
+  updateNote: Array<{ userId: string; id: string; opts?: { includePrivate?: boolean } }>;
+  deleteNote: Array<{
+    userId: string;
+    id: string;
+    opts?: { hard?: boolean; includePrivate?: boolean };
+  }>;
+  addTagToNote: Array<{
+    userId: string;
+    noteId: string;
+    name: string;
+    opts?: { includePrivate?: boolean };
+  }>;
+  removeTagFromNote: Array<{
+    userId: string;
+    noteId: string;
+    name: string;
+    opts?: { includePrivate?: boolean };
+  }>;
 } = {
   listNotes: [],
   getNote: [],
   semanticSearch: [],
   listBacklinks: [],
+  updateNote: [],
+  deleteNote: [],
+  addTagToNote: [],
+  removeTagFromNote: [],
 };
 
 vi.mock('../db/client', () => ({ db: {} }));
@@ -45,13 +67,59 @@ vi.mock('../notes/service', () => ({
       encryption: null,
     };
   }),
-  // The remaining service-layer exports are imported for type checking but
-  // not exercised in these tests.
   createNote: vi.fn(),
-  updateNote: vi.fn(),
-  deleteNote: vi.fn(),
-  addTagToNote: vi.fn(),
-  removeTagFromNote: vi.fn(),
+  // The write-path mocks below simulate the real service.ts contract: a
+  // bearer caller (`opts.includePrivate === false`) gets the same "not
+  // found" outcome for `private-id` that the real SQL-level `WHERE
+  // ... AND encryption IS NULL` filter produces — zero rows affected, not a
+  // thrown error and not a leak of "this id exists but is private."
+  updateNote: vi.fn(
+    async (
+      userId: string,
+      id: string,
+      _patch: unknown,
+      opts?: { includePrivate?: boolean },
+    ) => {
+      calls.updateNote.push({ userId, id, opts });
+      if (opts?.includePrivate === false && id === 'private-id') return null;
+      return { id, title: 'Hello', folderId: null, tagIds: [], pinned: false, trashedAt: null, updatedAt: '2026-05-02T00:00:00Z' };
+    },
+  ),
+  deleteNote: vi.fn(
+    async (
+      userId: string,
+      id: string,
+      opts?: { hard?: boolean; includePrivate?: boolean },
+    ) => {
+      calls.deleteNote.push({ userId, id, opts });
+      if (opts?.includePrivate === false && id === 'private-id') return false;
+      return true;
+    },
+  ),
+  addTagToNote: vi.fn(
+    async (
+      userId: string,
+      noteId: string,
+      name: string,
+      opts?: { includePrivate?: boolean },
+    ) => {
+      calls.addTagToNote.push({ userId, noteId, name, opts });
+      if (opts?.includePrivate === false && noteId === 'private-id') return null;
+      return 'tag-1';
+    },
+  ),
+  removeTagFromNote: vi.fn(
+    async (
+      userId: string,
+      noteId: string,
+      name: string,
+      opts?: { includePrivate?: boolean },
+    ) => {
+      calls.removeTagFromNote.push({ userId, noteId, name, opts });
+      if (opts?.includePrivate === false && noteId === 'private-id') return false;
+      return true;
+    },
+  ),
 }));
 
 vi.mock('../embeddings/search', () => ({
@@ -109,6 +177,10 @@ beforeEach(() => {
   calls.getNote.length = 0;
   calls.semanticSearch.length = 0;
   calls.listBacklinks.length = 0;
+  calls.updateNote.length = 0;
+  calls.deleteNote.length = 0;
+  calls.addTagToNote.length = 0;
+  calls.removeTagFromNote.length = 0;
 });
 
 /**
@@ -198,6 +270,102 @@ describe('buildMcpServer — Private Notes invisibility (PR 3 contract)', () => 
     await callTool(server, 'get_backlinks', { id: 'public-id' });
     expect(calls.listBacklinks).toHaveLength(1);
     expect(calls.listBacklinks[0].opts?.includePrivate).toBe(false);
+  });
+});
+
+describe('buildMcpServer — write tools refuse a private note id (task 04 PR A)', () => {
+  // update_note / delete_note / add_tag / remove_tag used to reach the
+  // service layer with no `includePrivate` option at all, so a bearer token
+  // that already knew (or guessed) a private note's id could mutate it even
+  // though every *read* tool refused to reveal it. These tests pin the fix:
+  // each write tool now threads `includePrivate: false`, and the service
+  // mock's "not found for private-id when includePrivate is false" contract
+  // (mirroring the real SQL `WHERE ... AND encryption IS NULL`) must produce
+  // the same MCP-visible "not found" a nonexistent id would.
+  const userId = '00000000-0000-0000-0000-000000000000';
+
+  it('update_note passes includePrivate=false and refuses a private id', async () => {
+    const server = buildMcpServer(userId);
+    const ok = (await callTool(server, 'update_note', {
+      id: 'public-id',
+      title: 'New title',
+    })) as { isError?: boolean };
+    expect(ok.isError).toBeUndefined();
+
+    const denied = (await callTool(server, 'update_note', {
+      id: 'private-id',
+      title: 'New title',
+    })) as { isError?: boolean };
+    expect(denied.isError).toBe(true);
+
+    expect(calls.updateNote).toHaveLength(2);
+    for (const c of calls.updateNote) {
+      expect(c.opts?.includePrivate).toBe(false);
+    }
+  });
+
+  it('delete_note passes includePrivate=false and refuses a private id (soft and hard)', async () => {
+    const server = buildMcpServer(userId);
+    const okSoft = (await callTool(server, 'delete_note', {
+      id: 'public-id',
+    })) as { isError?: boolean };
+    expect(okSoft.isError).toBeUndefined();
+
+    const deniedSoft = (await callTool(server, 'delete_note', {
+      id: 'private-id',
+    })) as { isError?: boolean };
+    expect(deniedSoft.isError).toBe(true);
+
+    const deniedHard = (await callTool(server, 'delete_note', {
+      id: 'private-id',
+      hard: true,
+    })) as { isError?: boolean };
+    expect(deniedHard.isError).toBe(true);
+
+    expect(calls.deleteNote).toHaveLength(3);
+    for (const c of calls.deleteNote) {
+      expect(c.opts?.includePrivate).toBe(false);
+    }
+  });
+
+  it('add_tag passes includePrivate=false and refuses a private note id', async () => {
+    const server = buildMcpServer(userId);
+    const ok = (await callTool(server, 'add_tag', {
+      noteId: 'public-id',
+      name: 'blog',
+    })) as { isError?: boolean };
+    expect(ok.isError).toBeUndefined();
+
+    const denied = (await callTool(server, 'add_tag', {
+      noteId: 'private-id',
+      name: 'blog',
+    })) as { isError?: boolean };
+    expect(denied.isError).toBe(true);
+
+    expect(calls.addTagToNote).toHaveLength(2);
+    for (const c of calls.addTagToNote) {
+      expect(c.opts?.includePrivate).toBe(false);
+    }
+  });
+
+  it('remove_tag passes includePrivate=false and refuses a private note id', async () => {
+    const server = buildMcpServer(userId);
+    const ok = (await callTool(server, 'remove_tag', {
+      noteId: 'public-id',
+      name: 'blog',
+    })) as { isError?: boolean };
+    expect(ok.isError).toBeUndefined();
+
+    const denied = (await callTool(server, 'remove_tag', {
+      noteId: 'private-id',
+      name: 'blog',
+    })) as { isError?: boolean };
+    expect(denied.isError).toBe(true);
+
+    expect(calls.removeTagFromNote).toHaveLength(2);
+    for (const c of calls.removeTagFromNote) {
+      expect(c.opts?.includePrivate).toBe(false);
+    }
   });
 });
 

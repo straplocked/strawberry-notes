@@ -25,7 +25,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { webhooks } from '../db/schema';
-import type { NoteDTO, NoteListItemDTO } from '../types';
+import type { NoteDTO } from '../types';
 import { deliverOnce } from './delivery';
 import type {
   NoteCreatedPayload,
@@ -38,17 +38,26 @@ import type {
   WebhookPayload,
 } from './types';
 
-/** Reduce a full NoteDTO (or list-item DTO) to the slim webhook ref shape. */
+/**
+ * Reduce a full NoteDTO to the slim webhook ref shape. Every call site in
+ * `lib/notes/service.ts` passes a `NoteDTO` (from `getNote`/`createNote`),
+ * which carries `encryption` — that's what decides `private` here. A private
+ * note's title is withheld (forced to `''`) even though it's plaintext
+ * server-side; see the `WebhookNoteRef` doc comment for why a webhook target
+ * doesn't get the same trust as the user's own browser.
+ */
 export function noteRef(
-  dto: Pick<NoteDTO, 'id' | 'title' | 'folderId' | 'pinned' | 'tagIds' | 'updatedAt'> | NoteListItemDTO,
+  dto: Pick<NoteDTO, 'id' | 'title' | 'folderId' | 'pinned' | 'tagIds' | 'updatedAt' | 'encryption'>,
 ): WebhookNoteRef {
+  const isPrivate = dto.encryption !== null;
   return {
     id: dto.id,
-    title: dto.title,
+    title: isPrivate ? '' : dto.title,
     folderId: dto.folderId,
     pinned: dto.pinned,
     tagIds: dto.tagIds,
     updatedAt: dto.updatedAt,
+    private: isPrivate,
   };
 }
 

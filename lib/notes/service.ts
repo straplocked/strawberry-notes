@@ -329,6 +329,17 @@ async function fireLinkedFor(
   fireNoteLinked(userId, noteRef(src), noteRef(tgt));
 }
 
+export interface UpdateNoteOptions {
+  /**
+   * Same contract as {@link GetNoteOptions.includePrivate}. Bearer-token
+   * callers (MCP / web clipper) pass `false` so a write aimed at a Private
+   * Notes id is excluded by the SQL `WHERE`, not just refused after reading
+   * the row — the caller gets the same "not found" it would for an id that
+   * doesn't exist at all.
+   */
+  includePrivate?: boolean;
+}
+
 export interface UpdateNoteInput {
   title?: string;
   content?: PMDoc;
@@ -353,7 +364,9 @@ export async function updateNote(
   userId: string,
   id: string,
   patch: UpdateNoteInput,
+  opts: UpdateNoteOptions = {},
 ): Promise<NoteDTO | null> {
+  const includePrivate = opts.includePrivate ?? true;
   const updates: Partial<typeof notes.$inferInsert> = { updatedAt: new Date() };
   if (patch.title !== undefined) updates.title = patch.title;
   if (patch.folderId !== undefined) updates.folderId = patch.folderId;
@@ -379,6 +392,12 @@ export async function updateNote(
     updates.hasImage = false;
     updates.encryption = patch.encryption!;
     updates.embeddingStale = false;
+    // A note locked *after* being embedded as plaintext would otherwise keep
+    // its last-computed vector server-side — reachable by semantic search
+    // even though the body itself is now ciphertext. Null it out on every
+    // lock so "never embedded" (docs/technical/private-notes.md) is actually
+    // true at the instant a note goes private, not just going forward.
+    updates.contentEmbedding = null;
   } else if (transitionToPlaintext) {
     if (patch.content === undefined) {
       throw new Error('updateNote: encryption=null requires a fresh plaintext content');
@@ -394,14 +413,25 @@ export async function updateNote(
     // For an already-private note this would be a server bug — the client
     // never sends a PMDoc for a private save — so we refuse it explicitly to
     // catch the mistake instead of silently leaking plaintext.
-    const existing = await db
-      .select({ encryption: notes.encryption })
-      .from(notes)
-      .where(and(eq(notes.id, id), eq(notes.userId, userId)));
-    if (existing.length > 0 && existing[0].encryption !== null) {
-      throw new Error(
-        'updateNote: cannot patch plaintext content on a private note; pass encryption + ciphertext or encryption=null',
-      );
+    //
+    // Only run this diagnostic for callers allowed to see private rows
+    // (session). For a bearer-token caller (`includePrivate: false`) this
+    // check would itself be a leak: throwing "cannot patch plaintext content
+    // on a private note" for someone else's — or the same user's MCP-
+    // invisible — private note id tells the caller a private note exists at
+    // that id. Bearer callers instead fall through to the SQL `WHERE` below,
+    // which excludes private rows and yields a plain "not found", same as a
+    // truly nonexistent id.
+    if (includePrivate) {
+      const existing = await db
+        .select({ encryption: notes.encryption })
+        .from(notes)
+        .where(and(eq(notes.id, id), eq(notes.userId, userId)));
+      if (existing.length > 0 && existing[0].encryption !== null) {
+        throw new Error(
+          'updateNote: cannot patch plaintext content on a private note; pass encryption + ciphertext or encryption=null',
+        );
+      }
     }
     updates.content = patch.content;
     updates.contentText = docToPlainText(patch.content);
@@ -418,10 +448,15 @@ export async function updateNote(
 
   // Ownership is enforced in the WHERE; returning() tells us whether the row
   // existed for this user, saving the ownership preflight round-trip.
+  // Bearer-token callers additionally exclude private rows here — in SQL,
+  // not as a post-hoc check — so a write aimed at a Private Notes id affects
+  // zero rows and reads back as "not found", exactly like a nonexistent id.
+  const updateConditions = [eq(notes.id, id), eq(notes.userId, userId)];
+  if (!includePrivate) updateConditions.push(isNull(notes.encryption));
   const updated = await db
     .update(notes)
     .set(updates)
-    .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+    .where(and(...updateConditions))
     .returning({ id: notes.id, title: notes.title, encryption: notes.encryption });
   if (updated.length === 0) return null;
 
@@ -492,12 +527,37 @@ export async function updateNote(
   return dto;
 }
 
+export interface DeleteNoteOptions {
+  hard?: boolean;
+  /** Same contract as {@link UpdateNoteOptions.includePrivate}. */
+  includePrivate?: boolean;
+}
+
 export async function deleteNote(
   userId: string,
   id: string,
-  opts: { hard?: boolean } = {},
+  opts: DeleteNoteOptions = {},
 ): Promise<boolean> {
+  const includePrivate = opts.includePrivate ?? true;
+
   if (opts.hard) {
+    const hardConditions = [eq(notes.id, id), eq(notes.userId, userId)];
+    if (!includePrivate) {
+      hardConditions.push(isNull(notes.encryption));
+      // Tokens (MCP / web clipper) may hard-delete only notes already in
+      // Trash. A bearer token that leaks or gets reused shouldn't be able to
+      // permanently destroy a live note in one call — soft-delete's Trash
+      // window is the safety net, and hard-delete-in-one-step would skip it.
+      hardConditions.push(isNotNull(notes.trashedAt));
+    }
+    // Confirm eligibility BEFORE touching attachment files: deleting them for
+    // a note the caller isn't allowed to hard-delete would be a pointless
+    // (and irreversible) side effect on what should be a clean "not found".
+    const [eligible] = await db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(...hardConditions));
+    if (!eligible) return false;
     // Clean up attachment files + rows BEFORE deleting the note itself —
     // once the note row is gone we lose the noteId linkage and the orphan
     // sweep would have to pick them up on a later run. Doing it here keeps
@@ -505,7 +565,7 @@ export async function deleteNote(
     await deleteAttachmentsForNote(userId, id);
     const rows = await db
       .delete(notes)
-      .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+      .where(and(...hardConditions))
       .returning({ id: notes.id });
     return rows.length > 0;
   }
@@ -513,15 +573,24 @@ export async function deleteNote(
   // Soft-delete: capture state BEFORE flipping trashedAt so we can fire the
   // webhook event with the note's pre-trash ref. After update, the row is
   // hidden from default list views but `getNote` still returns it.
-  const dto = await getNote(userId, id);
+  // `getNote`'s own `includePrivate` gate means a bearer token already gets
+  // `dto === null` for a private id here.
+  const dto = await getNote(userId, id, { includePrivate });
+  const softConditions = [eq(notes.id, id), eq(notes.userId, userId)];
+  if (!includePrivate) softConditions.push(isNull(notes.encryption));
   const rows = await db
     .update(notes)
     .set({ trashedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(notes.id, id), eq(notes.userId, userId)))
+    .where(and(...softConditions))
     .returning({ id: notes.id });
   if (rows.length === 0) return false;
   if (dto) fireNoteTrashed(userId, noteRef(dto));
   return true;
+}
+
+export interface NoteTagOptions {
+  /** Same contract as {@link UpdateNoteOptions.includePrivate}. */
+  includePrivate?: boolean;
 }
 
 /** Add a tag (by name) to a note. Idempotent. Returns the resolved tag id. */
@@ -529,11 +598,15 @@ export async function addTagToNote(
   userId: string,
   noteId: string,
   name: string,
+  opts: NoteTagOptions = {},
 ): Promise<string | null> {
+  const includePrivate = opts.includePrivate ?? true;
+  const ownedConditions = [eq(notes.id, noteId), eq(notes.userId, userId)];
+  if (!includePrivate) ownedConditions.push(isNull(notes.encryption));
   const [owned] = await db
     .select({ id: notes.id })
     .from(notes)
-    .where(and(eq(notes.id, noteId), eq(notes.userId, userId)));
+    .where(and(...ownedConditions));
   if (!owned) return null;
   const [tagId] = await upsertTagsByName(userId, [name]);
   if (!tagId) return null;
@@ -559,11 +632,15 @@ export async function removeTagFromNote(
   userId: string,
   noteId: string,
   name: string,
+  opts: NoteTagOptions = {},
 ): Promise<boolean> {
+  const includePrivate = opts.includePrivate ?? true;
+  const ownedConditions = [eq(notes.id, noteId), eq(notes.userId, userId)];
+  if (!includePrivate) ownedConditions.push(isNull(notes.encryption));
   const [owned] = await db
     .select({ id: notes.id })
     .from(notes)
-    .where(and(eq(notes.id, noteId), eq(notes.userId, userId)));
+    .where(and(...ownedConditions));
   if (!owned) return false;
   const clean = name.trim().toLowerCase();
   const [tag] = await db

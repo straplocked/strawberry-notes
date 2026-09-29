@@ -29,6 +29,7 @@ import {
   isEmbeddingConfigured,
   readEmbeddingConfig,
 } from './client';
+import { eligibleForAiSql } from './eligible';
 
 const BATCH_SIZE = 16;
 const INITIAL_DELAY_MS = 500;
@@ -81,16 +82,17 @@ export async function runOnce(
   inFlight = true;
   try {
     const batch = opts.batchSize ?? BATCH_SIZE;
-    // Lock a batch of stale, non-trashed rows. Using `FOR UPDATE SKIP LOCKED`
+    // Lock a batch of stale, eligible rows. Using `FOR UPDATE SKIP LOCKED`
     // means two replicas running in parallel don't collide, and a crashed
     // worker releases its rows on connection close.
-    // `encryption IS NULL` is belt-and-suspenders: the service layer never
-    // sets `embedding_stale = true` on a private write, so this filter only
+    // `eligibleForAiSql` (encryption IS NULL AND trashed_at IS NULL) is
+    // belt-and-suspenders: the service layer never sets
+    // `embedding_stale = true` on a private write, so this filter only
     // matters if a row's privacy state was somehow toggled out of band.
     const rows = await db.execute(sql`
       SELECT id, title, content_text
       FROM notes
-      WHERE embedding_stale = true AND trashed_at IS NULL AND encryption IS NULL
+      WHERE embedding_stale = true AND ${eligibleForAiSql}
       ORDER BY updated_at DESC
       LIMIT ${batch}
       FOR UPDATE SKIP LOCKED
@@ -113,6 +115,14 @@ export async function runOnce(
 
     // Update each row individually — PG's CASE-based update of a vector column
     // is ugly and we only batch ~16 at a time.
+    //
+    // Re-check `eligibleForAiSql` in the UPDATE itself, not just the earlier
+    // SELECT: the `FOR UPDATE SKIP LOCKED` row lock releases when that
+    // SELECT's statement ends — well before the `embedBatch` HTTP round trip
+    // below returns (see the module comment on replica coordination). If the
+    // user locks the note as Private Notes during that window, this guard is
+    // what stops the freshly-computed vector from being written into a note
+    // that is now supposed to have never been embedded.
     for (let i = 0; i < list.length; i += 1) {
       const row = list[i];
       const v = vectors[i];
@@ -121,7 +131,7 @@ export async function runOnce(
         UPDATE notes
         SET content_embedding = ${literal}::vector,
             embedding_stale = false
-        WHERE id = ${row.id}
+        WHERE id = ${row.id} AND ${eligibleForAiSql}
       `);
     }
 

@@ -25,7 +25,17 @@ export function isWebhookEvent(value: unknown): value is WebhookEvent {
   return typeof value === 'string' && (WEBHOOK_EVENTS as readonly string[]).includes(value);
 }
 
-/** Minimal note shape included in every note-scoped event payload. */
+/**
+ * Minimal note shape included in every note-scoped event payload.
+ *
+ * `title` is forced to `''` and `private` is `true` for a Private Notes
+ * note. Title is plaintext in the app's own UI (list view, sidebar) because
+ * the browser needs it to render something before unlock — see
+ * docs/technical/private-notes.md — but a webhook target is a third-party
+ * endpoint the operator configured, not the user's own browser session, so
+ * it gets the same "nothing about the body" treatment MCP and the web
+ * clipper get, applied to the title too.
+ */
 export interface WebhookNoteRef {
   id: string;
   title: string;
@@ -33,6 +43,7 @@ export interface WebhookNoteRef {
   pinned: boolean;
   tagIds: string[];
   updatedAt: string;
+  private: boolean;
 }
 
 /** Per-event payload shapes. */

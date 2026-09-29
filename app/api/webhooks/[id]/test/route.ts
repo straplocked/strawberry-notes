@@ -41,6 +41,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       pinned: false,
       tagIds: [],
       updatedAt: new Date().toISOString(),
+      private: false,
     },
   };
 
