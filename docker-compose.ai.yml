@@ -1,0 +1,54 @@
+# Opt-in overlay: bundles a local Ollama server for semantic search so a
+# zero-config install can have it enabled without an external API key or
+# provider. Not part of the base docker-compose.yml — Ollama pulls a
+# multi-hundred-MB model image on first start, which isn't a "zero-config"
+# default for everyone (constrained hosts, metered links, GPU-less boxes
+# that would rather skip it).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d
+#
+# Model: qwen3-embedding:0.6b, 1024-dim output — matches the default
+# EMBEDDING_DIMS in docker-compose.yml / .env.example, so no extra
+# configuration is needed beyond adding this file to the compose command.
+# CPU inference works fine at this model size; a GPU is not required.
+services:
+  app:
+    environment:
+      EMBEDDING_ENDPOINT: http://ollama:11434/v1
+      EMBEDDING_MODEL: qwen3-embedding:0.6b
+      EMBEDDING_DIMS: 1024
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # One-shot: pulls the embedding model into the `ollama` volume on first
+  # start, then exits. `app` waits on this completing successfully before it
+  # starts, so the very first search request doesn't race a multi-hundred-MB
+  # download. Re-runs (harmlessly, `ollama pull` no-ops) on every
+  # `docker compose up` afterwards — it's a no-op network round-trip once the
+  # model is already cached in the volume.
+  ollama-pull:
+    image: ollama/ollama:latest
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["sh", "-c", "ollama pull qwen3-embedding:0.6b"]
+
+volumes:
+  ollama:

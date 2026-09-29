@@ -6,10 +6,17 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import styles from '../auth.module.css';
 
-export function SignupForm() {
+export interface SignupFormProps {
+  /** True when this instance has no users yet and is showing the
+   * zero-config setup-code flow instead of ordinary public signup. */
+  setupMode?: boolean;
+}
+
+export function SignupForm({ setupMode = false }: SignupFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
@@ -21,7 +28,7 @@ export function SignupForm() {
     const res = await fetch('/api/auth/signup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(setupMode ? { email, password, setupCode } : { email, password }),
     });
     if (!res.ok) {
       const { error: msg } = await res.json().catch(() => ({ error: 'Signup failed' }));
@@ -70,9 +77,30 @@ export function SignupForm() {
 
   return (
     <>
-      <h1 className={styles.h1}>Plant your notebook</h1>
-      <p className={styles.subtitle}>8+ character password.</p>
+      <h1 className={styles.h1}>{setupMode ? 'Set up Strawberry Notes' : 'Plant your notebook'}</h1>
+      <p className={styles.subtitle}>
+        {setupMode
+          ? 'First run — create the admin account. Find the setup code in the container logs (docker compose logs app).'
+          : '8+ character password.'}
+      </p>
       <form className={styles.form} onSubmit={onSubmit}>
+        {setupMode && (
+          <div>
+            <label className={styles.label} htmlFor="setupCode">
+              Setup code
+            </label>
+            <input
+              id="setupCode"
+              type="text"
+              required
+              autoComplete="off"
+              placeholder="XXXX-XXXX"
+              className={styles.input}
+              value={setupCode}
+              onChange={(e) => setSetupCode(e.target.value)}
+            />
+          </div>
+        )}
         <div>
           <label className={styles.label} htmlFor="email">
             Email
@@ -104,15 +132,17 @@ export function SignupForm() {
         </div>
         {error && <p className={styles.error}>{error}</p>}
         <button className={styles.submit} type="submit" disabled={pending}>
-          {pending ? 'Creating…' : 'Create account'}
+          {pending ? 'Creating…' : setupMode ? 'Create admin account' : 'Create account'}
         </button>
       </form>
-      <div className={styles.switch}>
-        Already have an account?{' '}
-        <Link className={styles.link} href="/login">
-          Sign in
-        </Link>
-      </div>
+      {!setupMode && (
+        <div className={styles.switch}>
+          Already have an account?{' '}
+          <Link className={styles.link} href="/login">
+            Sign in
+          </Link>
+        </div>
+      )}
     </>
   );
 }

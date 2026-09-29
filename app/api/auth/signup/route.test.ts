@@ -9,6 +9,15 @@ const state = {
 vi.mock('@/lib/db/client', () => {
   return {
     db: {
+      // These tests exercise the ordinary ALLOW_PUBLIC_SIGNUP=true path, not
+      // zero-config setup mode — isSetupModeActive() checks "any user
+      // exists" via this, so return a row to keep it false (see
+      // bootstrap.test.ts for setup-mode's own coverage).
+      select: () => ({
+        from: () => ({
+          limit: () => Promise.resolve([{ id: 'existing-user' }]),
+        }),
+      }),
       insert: () => ({
         values: () => {
           state.inserts += 1;

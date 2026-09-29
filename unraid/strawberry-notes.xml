@@ -19,12 +19,14 @@ Requires a Postgres 16+ database with the `pgvector` extension.
 Use the pgvector/pgvector:pg16 image (drop-in for postgres:16) if
 your existing Postgres doesn't have pgvector installed.
 
-First-time setup:
+First-time setup (no shell commands needed):
   1. Create a database and user for Strawberry on your Postgres.
-  2. Fill in DATABASE_URL and AUTH_SECRET below.
-  3. Set ALLOW_PUBLIC_SIGNUP to `true` for the initial install,
-     visit /signup, create your admin account, then set it back to
-     `false` and redeploy.
+  2. Fill in DATABASE_URL below. Leave AUTH_SECRET blank — one is
+     generated for you on first boot and kept in the Uploads path.
+  3. Start the container, open its log (Docker tab → strawberry-notes →
+     Logs), and copy the setup code printed there.
+  4. Visit the WebUI — you'll land on a one-time setup page. Enter the
+     code to create your admin account.
 
 Docs: https://github.com/straplocked/strawberry-notes/tree/main/docs
   </Overview>
@@ -44,9 +46,9 @@ the standard `postgres://user:pass@host:5432/db` shape.
   </Requires>
   <Config Name="WebUI" Target="3000" Default="3200" Mode="tcp" Description="Host port the WebUI is published on. Default: 3200." Type="Port" Display="always" Required="true" Mask="false">3200</Config>
   <Config Name="DATABASE_URL" Target="DATABASE_URL" Default="postgres://strawberry:CHANGE_ME@192.168.1.10:5432/strawberry" Mode="" Description="Full Postgres connection string. The user must own the target database; Strawberry will run migrations on first boot. Requires the pgvector extension." Type="Variable" Display="always" Required="true" Mask="true"></Config>
-  <Config Name="AUTH_SECRET" Target="AUTH_SECRET" Default="" Mode="" Description="32+ bytes of base64 entropy used to sign session cookies. Generate one on Unraid's terminal: `openssl rand -base64 32`. Keep this stable across restarts — rotating it logs everyone out." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="AUTH_SECRET" Target="AUTH_SECRET" Default="" Mode="" Description="32+ bytes of base64 entropy used to sign session cookies. Leave blank — one is generated automatically on first boot and stored under the Uploads path below, so it survives container recreates. Only set this yourself if you need a stable value independent of that path (e.g. restoring onto a fresh volume)." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="AUTH_URL" Target="AUTH_URL" Default="" Mode="" Description="Public URL where Strawberry is reachable, e.g. https://notes.example.com. Leave blank for LAN access; set explicitly when behind a TLS-terminating proxy that strips X-Forwarded-* headers." Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="ALLOW_PUBLIC_SIGNUP" Target="ALLOW_PUBLIC_SIGNUP" Default="false" Mode="" Description="Set to `true` for the initial install so you can create your admin account at /signup, then flip back to `false` and redeploy. Leave `false` afterwards unless you want strangers to register." Type="Variable" Display="always" Required="true" Mask="false">false</Config>
+  <Config Name="ALLOW_PUBLIC_SIGNUP" Target="ALLOW_PUBLIC_SIGNUP" Default="false" Mode="" Description="Leave `false`. The very first admin account is created through a one-time setup-code flow at first boot (code printed in this container's log) — no need to open public signup for that. Set to `true` only if you want an instance strangers can register on afterwards." Type="Variable" Display="always" Required="true" Mask="false">false</Config>
   <Config Name="Uploads" Target="/data" Default="/mnt/user/appdata/strawberry-notes/data" Mode="rw" Description="Where uploaded images live on disk. Survives container recreates." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/strawberry-notes/data</Config>
 
   <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="10" Mode="" Description="Per-file upload size cap in megabytes." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
@@ -61,9 +63,9 @@ the standard `postgres://user:pass@host:5432/db` shape.
   <Config Name="SMTP_SECURE" Target="SMTP_SECURE" Default="false" Mode="" Description="`true` forces implicit TLS at connect time (port 465 deployments)." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 
   <Config Name="EMBEDDING_ENDPOINT" Target="EMBEDDING_ENDPOINT" Default="" Mode="" Description="OpenAI-compatible embeddings endpoint (`/v1`). Leave blank to disable semantic search; everything else still works." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="EMBEDDING_MODEL" Target="EMBEDDING_MODEL" Default="" Mode="" Description="Model id, e.g. text-embedding-3-small (OpenAI) or nomic-embed-text (Ollama)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="EMBEDDING_MODEL" Target="EMBEDDING_MODEL" Default="" Mode="" Description="Model id. Stick to a 1024-dim model to match the default EMBEDDING_DIMS below with zero extra config — e.g. qwen3-embedding:0.6b or mxbai-embed-large (Ollama), or text-embedding-3-small pinned to 1024 dims via the OpenAI API's `dimensions` param." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="EMBEDDING_API_KEY" Target="EMBEDDING_API_KEY" Default="" Mode="" Description="Bearer token for the embeddings provider. Optional for local providers like Ollama." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="EMBEDDING_DIMS" Target="EMBEDDING_DIMS" Default="1024" Mode="" Description="Vector dimension. MUST match the provider's output dim. Default 1024 matches mxbai-embed-large and similar." Type="Variable" Display="advanced" Required="false" Mask="false">1024</Config>
+  <Config Name="EMBEDDING_DIMS" Target="EMBEDDING_DIMS" Default="1024" Mode="" Description="Vector dimension. MUST match the provider's output dim. Default 1024 — pick a 1024-dim model above and leave this alone; changing it is a destructive re-embed." Type="Variable" Display="advanced" Required="false" Mask="false">1024</Config>
 
   <Config Name="PASSWORD_AUTH" Target="PASSWORD_AUTH" Default="true" Mode="" Description="Email/password sign-in. Set to `false` for OIDC-only or proxy-only deployments." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="TOTP_ENABLED" Target="TOTP_ENABLED" Default="false" Mode="" Description="Enable per-user TOTP/2FA enrollment from Settings → Security." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
@@ -78,6 +80,7 @@ the standard `postgres://user:pass@host:5432/db` shape.
   <Config Name="PROXY_AUTH" Target="PROXY_AUTH" Default="false" Mode="" Description="Bypass first-party login and trust a forward-auth header (Authentik forward-auth, Authelia, oauth2-proxy). Hides /login. Requires PROXY_AUTH_SHARED_SECRET." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="PROXY_AUTH_USER_HEADER" Target="PROXY_AUTH_USER_HEADER" Default="x-authentik-username" Mode="" Description="Header carrying the trusted username." Type="Variable" Display="advanced" Required="false" Mask="false">x-authentik-username</Config>
   <Config Name="PROXY_AUTH_EMAIL_HEADER" Target="PROXY_AUTH_EMAIL_HEADER" Default="x-authentik-email" Mode="" Description="Optional companion email header." Type="Variable" Display="advanced" Required="false" Mask="false">x-authentik-email</Config>
-  <Config Name="PROXY_AUTH_SHARED_SECRET" Target="PROXY_AUTH_SHARED_SECRET" Default="" Mode="" Description="REQUIRED when PROXY_AUTH=true. The proxy must forward `X-Forward-Auth-Secret: <this>` on every request; mismatch → 401. Distinguishes proxy traffic from clients spoofing the username header." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="PROXY_AUTH_SHARED_SECRET" Target="PROXY_AUTH_SHARED_SECRET" Default="" Mode="" Description="REQUIRED when PROXY_AUTH=true. The proxy must forward `X-Forward-Auth-Secret: &lt;this&gt;` on every request; mismatch → 401. Distinguishes proxy traffic from clients spoofing the username header." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="PROXY_AUTH_TRUSTED_IPS" Target="PROXY_AUTH_TRUSTED_IPS" Default="" Mode="" Description="Comma-separated CIDRs allowed to send the trusted proxy-auth header, checked against the connecting socket peer. Only meaningful with PROXY_AUTH=true." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="PROXY_AUTH_LOGOUT_URL" Target="PROXY_AUTH_LOGOUT_URL" Default="" Mode="" Description="Where the sign-out button points in proxy mode (e.g. /outpost.goauthentik.io/sign_out for Authentik forward-auth). Unset → button hidden." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>

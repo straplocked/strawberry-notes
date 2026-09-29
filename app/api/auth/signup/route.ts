@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema';
 import { issueEmailConfirmationToken } from '@/lib/auth/email-confirmation';
 import { seedFirstRunContent } from '@/lib/auth/first-run';
 import { isEmailConfirmationRequired, isPublicSignupEnabled } from '@/lib/auth/signup-policy';
+import { createFirstAdminUser, isSetupModeActive, verifySetupCode } from '@/lib/auth/bootstrap';
 import { sendMail } from '@/lib/email/client';
 import { emailConfirmationEmail } from '@/lib/email/templates';
 import { getPublicBaseUrl } from '@/lib/http/public-url';
@@ -14,13 +15,17 @@ import { clientIp, rateLimit, rateLimitResponse } from '@/lib/http/rate-limit';
 const Body = z.object({
   email: z.string().email(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  // Only required in setup mode (see below) — a normal open-signup instance
+  // never sends this.
+  setupCode: z.string().optional(),
 });
 
 // 5 signups per IP per hour, with a small burst.
 const SIGNUP_LIMIT = { capacity: 5, refillPerSec: 5 / 3600 };
 
 export async function POST(req: Request) {
-  if (!isPublicSignupEnabled()) {
+  const setupMode = await isSetupModeActive();
+  if (!setupMode && !isPublicSignupEnabled()) {
     // Closed deployment: behave as if the route doesn't exist so we don't
     // advertise it in error messages.
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
@@ -39,6 +44,35 @@ export async function POST(req: Request) {
   }
   const email = parsed.data.email.toLowerCase();
   const passwordHash = await hash(parsed.data.password, 10);
+
+  if (setupMode) {
+    // Zero-config first run: no ALLOW_PUBLIC_SIGNUP gate applies here — the
+    // gate is the setup code instead, which only someone who can read the
+    // container's boot logs (docker compose logs app) has.
+    const authSecret = process.env.AUTH_SECRET ?? '';
+    if (!verifySetupCode(parsed.data.setupCode ?? '', authSecret)) {
+      return NextResponse.json({ error: 'Invalid setup code' }, { status: 400 });
+    }
+
+    const result = await createFirstAdminUser({ email, passwordHash });
+    if (!result.ok) {
+      // Lost the advisory-lock race to another request — setup already
+      // completed in the meantime. Point at the now-real login page.
+      return NextResponse.json(
+        { error: 'Setup already completed. Sign in instead.' },
+        { status: 409 },
+      );
+    }
+
+    try {
+      await seedFirstRunContent(result.userId);
+    } catch (err) {
+      // Non-fatal: the admin account exists either way. Log and move on.
+      console.error('[signup] first-run seed failed', err);
+    }
+
+    return NextResponse.json({ ok: true, userId: result.userId, confirmationRequired: false });
+  }
 
   try {
     const requireConfirm = isEmailConfirmationRequired();
