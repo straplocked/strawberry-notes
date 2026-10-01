@@ -4,6 +4,7 @@ import { useEditor, EditorContent, type Editor as TiptapEditor, type JSONContent
 import { StarterKit } from '@tiptap/starter-kit';
 import { TaskList } from '@tiptap/extension-task-list';
 import { TaskItem } from '@tiptap/extension-task-item';
+import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import { Image as ImageExt } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
@@ -38,7 +39,7 @@ import { countTasks } from '@/lib/editor/prosemirror-utils';
 import { dcount, dlog, drender } from '@/lib/debug';
 import type { FolderDTO, NoteDTO, PMDoc, TagDTO } from '@/lib/types';
 
-import { ActionSheet } from './ActionSheet';
+import { ActionSheet, type ActionSheetAction } from './ActionSheet';
 import { BacklinksPanel } from './BacklinksPanel';
 import { TagEditor } from './TagEditor';
 import styles from './editor.module.css';
@@ -128,6 +129,61 @@ const titleStyle: CSSProperties = {
   resize: 'none',
   overflow: 'hidden',
 };
+
+/**
+ * Row/column/table "More" menu actions — shown only when the caret sits
+ * inside a table. Exported so the mobile editor-actions sheet (AppShell's
+ * `editorActionsList`) can offer the same set; the desktop toolbar's own
+ * "More" sheet below uses it directly.
+ */
+export function tableActions(
+  editor: TiptapEditor | null | undefined,
+  onDone: () => void,
+): ActionSheetAction[] {
+  if (!editor || !editor.isActive('table')) return [];
+  const run = (fn: (e: TiptapEditor) => void) => () => {
+    onDone();
+    fn(editor);
+  };
+  return [
+    {
+      id: 'table-add-row-above',
+      label: 'Add row above',
+      onSelect: run((e) => e.chain().focus().addRowBefore().run()),
+    },
+    {
+      id: 'table-add-row-below',
+      label: 'Add row below',
+      onSelect: run((e) => e.chain().focus().addRowAfter().run()),
+    },
+    {
+      id: 'table-delete-row',
+      label: 'Delete row',
+      onSelect: run((e) => e.chain().focus().deleteRow().run()),
+    },
+    {
+      id: 'table-add-col-left',
+      label: 'Add column left',
+      onSelect: run((e) => e.chain().focus().addColumnBefore().run()),
+    },
+    {
+      id: 'table-add-col-right',
+      label: 'Add column right',
+      onSelect: run((e) => e.chain().focus().addColumnAfter().run()),
+    },
+    {
+      id: 'table-delete-col',
+      label: 'Delete column',
+      onSelect: run((e) => e.chain().focus().deleteColumn().run()),
+    },
+    {
+      id: 'table-delete',
+      label: 'Delete table',
+      destructive: true,
+      onSelect: run((e) => e.chain().focus().deleteTable().run()),
+    },
+  ];
+}
 
 export interface EditorProps {
   note: NoteDTO | null;
@@ -262,6 +318,15 @@ function EditorImpl({
         StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
         TaskList,
         TaskItem.configure({ nested: true }),
+        // `renderWrapper: true` wraps every table in a `.tableWrapper` div so
+        // a wide table scrolls horizontally instead of blowing out the page
+        // (see `.pm :global(.tableWrapper)` in editor.module.css). Resizing
+        // is left off — not required, and it'd add drag-handle UI we don't
+        // have a design for yet.
+        Table.configure({ resizable: false, renderWrapper: true }),
+        TableRow,
+        TableHeader,
+        TableCell,
         ImageExt,
         Placeholder.configure({ placeholder: 'Start writing…' }),
         WikiLinkExtension.configure({
@@ -763,6 +828,15 @@ function EditorImpl({
               window.location.href = '/api/export/all.zip';
             },
           },
+          {
+            id: 'insert-table',
+            label: 'Insert table',
+            onSelect: () => {
+              setMoreOpen(false);
+              editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+            },
+          },
+          ...tableActions(editor, () => setMoreOpen(false)),
         ]}
       />
     </div>

@@ -12,6 +12,7 @@ Loaded in `Editor.tsx`:
 
 - **`StarterKit`** — paragraph, headings, bold, italic, strike, code, inline code, blockquote, bullet/ordered lists, horizontal rule, hard break, history.
 - **`TaskList` + `TaskItem`** — checklists with checkboxes.
+- **`Table` + `TableRow` + `TableHeader` + `TableCell`** (`@tiptap/extension-table`) — GFM tables. `Table` is configured with `resizable: false, renderWrapper: true`: no column-drag UI (no design for it yet), but every table still renders inside a `.tableWrapper` div so a table wider than the reading column scrolls horizontally instead of blowing out the page. See [Tables](#tables) below.
 - **`Image`** — inline images (referenced by URL).
 - **`Placeholder`** — prompt text when the doc is empty.
 - **`WikiLinkExtension`** (in-house, `lib/editor/wiki-link-plugin.ts`) — decoration-only inline chips + `[[` autocomplete popup. See [Wiki-links](#wiki-links--backlinks) below.
@@ -56,9 +57,30 @@ Markdown is a transport format, not a storage format. It's used for **import** a
 - **Markdown → PM JSON:** `lib/markdown/from-markdown.ts`, using `marked` for tokenisation and then a hand-rolled mapper to PM nodes.
 - **PM JSON → Markdown:** `lib/markdown/to-markdown.ts`, a recursive serialiser over node/mark types.
 
-Both directions are tested in `lib/markdown/markdown.test.ts`. Covered: headings, paragraphs, blockquotes, bullet/ordered/task lists, bold/italic/strike/inline code, images, hard breaks.
+Both directions are tested in `lib/markdown/markdown.test.ts`. Covered: headings, paragraphs, blockquotes, bullet/ordered/task lists, bold/italic/strike/inline code, images, hard breaks, tables.
 
-Not covered (and therefore not guaranteed on round-trip): tables, footnotes, raw HTML.
+Not covered (and therefore not guaranteed on round-trip): footnotes, raw HTML (other than a literal `<br>` inside a table cell — see below).
+
+---
+
+## Tables
+
+GFM pipe tables, via `@tiptap/extension-table`. Node shape: `table` → `tableRow` → `tableHeader` (header row) / `tableCell` (body rows), each holding `block+` content (in practice always `paragraph`).
+
+- **Insert:** the toolbar's **More** menu (desktop) or the mobile editor-actions sheet has an **Insert table** item that runs `editor.commands.insertTable({ rows: 3, cols: 3, withHeaderRow: true })` — a 3×3 table with a header row.
+- **Row / column / table actions:** `tableActions()` in `Editor.tsx` returns a list of `ActionSheetAction`s (add row above/below, delete row, add column left/right, delete column, delete table) whenever `editor.isActive('table')` is true — i.e. only while the caret sits inside a table. Both the desktop "More" sheet and the mobile editor-actions sheet (`AppShell.tsx`) call it, so the same affordances exist on both surfaces. These map directly to the extension's own commands (`addRowBefore`, `addRowAfter`, `deleteRow`, `addColumnBefore`, `addColumnAfter`, `deleteColumn`, `deleteTable`).
+- **Styling:** `.pm :global(.tableWrapper)` in `editor.module.css` scrolls horizontally instead of forcing the whole page wider — the one part of the layout that matters most on mobile, where `.page` has little room to spare. All table colors are the same CSS custom properties used everywhere else (`--hair`, `--surface-2`, `--ink`, …), so light/dark theming needs no table-specific rules.
+
+### Markdown shape
+
+`lib/markdown/to-markdown.ts` renders a `table` node as a standard GFM pipe table: a header row (from the first `tableRow`), an alignment row, then one line per remaining row. `lib/markdown/from-markdown.ts` parses the inverse using `marked`'s built-in GFM table token (`header` / `align` / `rows`).
+
+- **Alignment** lives on each cell's `align` attr (`'left' | 'center' | 'right' | null`) — the same attribute `@tiptap/extension-table` itself defines. GFM alignment is per-column, so the serializer uses whichever cell in a column declares one.
+- **Escaped pipes:** a bare `|` inside a cell's rendered text (including inside a code span) is backslash-escaped so the Markdown table parser doesn't read it as an extra column delimiter; marked un-escapes it back to `|` on import. Same algorithm either side of the round trip: `/\\.|\|/g`, leaving already-escaped sequences alone.
+- **Multi-paragraph cells:** a table cell's content is `block+`, so pressing Enter inside a cell produces a second paragraph. Since a pipe-table row can't span physical lines, multiple blocks (or a `hardBreak`) are joined with a literal `<br>` on export; `marked` tokenises that back into an inline `html` token on import, which splits the cell's tokens into separate paragraphs again.
+- **Empty cells** round-trip as empty paragraphs (`{ type: 'paragraph' }` / `{ type: 'paragraph', content: [] }`).
+
+Tested in `lib/markdown/markdown.test.ts`'s `table round-trip` block: per-column alignment, escaped pipes, inline code/bold inside cells (including a pipe inside a code span), empty cells, the exact shape `insertTable()` produces, and the multi-paragraph/`<br>` case.
 
 ---
 

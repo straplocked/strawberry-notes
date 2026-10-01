@@ -68,6 +68,18 @@ function convertBlock(t: Tokens.Generic): PMNode[] {
     }
     case 'hr':
       return [{ type: 'horizontalRule' }];
+    case 'table': {
+      const tbl = t as Tokens.Table;
+      const headerRow: PMNode = {
+        type: 'tableRow',
+        content: tbl.header.map((cell, i) => tableCellFromToken(cell, tbl.align[i] ?? null, true)),
+      };
+      const bodyRows: PMNode[] = tbl.rows.map((row) => ({
+        type: 'tableRow',
+        content: row.map((cell, i) => tableCellFromToken(cell, tbl.align[i] ?? null, false)),
+      }));
+      return [{ type: 'table', content: [headerRow, ...bodyRows] }];
+    }
     case 'code': {
       const c = t as Tokens.Code;
       return [
@@ -97,6 +109,46 @@ function convertBlock(t: Tokens.Generic): PMNode[] {
 function taskItemInner(it: Tokens.ListItem): PMNode[] {
   const text = (it.text ?? '').replace(/^\s*\[[ xX]\]\s*/, '');
   return [{ type: 'paragraph', content: [{ type: 'text', text }] }];
+}
+
+/**
+ * Build a `tableCell`/`tableHeader` node from a marked table-cell token.
+ *
+ * A cell's Markdown text can't contain a literal newline, so a multi-block
+ * cell (produced by our own serializer when the user pressed Enter inside a
+ * cell) round-trips through a literal `<br>` instead — marked tokenises
+ * that as an inline `html` token, which `splitOnBr` uses as the paragraph
+ * boundary before handing each group to the normal inline converter.
+ */
+function tableCellFromToken(
+  cell: Tokens.TableCell,
+  align: 'left' | 'center' | 'right' | null,
+  isHeader: boolean,
+): PMNode {
+  const groups = splitOnBr(cell.tokens ?? []);
+  const content: PMNode[] = groups.map((toks) => ({
+    type: 'paragraph',
+    content: inlineFrom(toks),
+  }));
+  return {
+    type: isHeader ? 'tableHeader' : 'tableCell',
+    ...(align ? { attrs: { align } } : {}),
+    content,
+  };
+}
+
+/** Split a cell's inline token stream on literal `<br>` html tokens. */
+function splitOnBr(tokens: Tokens.Generic[]): Tokens.Generic[][] {
+  const groups: Tokens.Generic[][] = [[]];
+  for (const tok of tokens) {
+    const raw = (tok as { raw?: string }).raw ?? '';
+    if (tok.type === 'html' && /^<br\s*\/?>$/i.test(raw)) {
+      groups.push([]);
+    } else {
+      groups[groups.length - 1].push(tok);
+    }
+  }
+  return groups;
 }
 
 function inlineFrom(tokens: Tokens.Generic[], marks: PMNode['marks'] = []): PMNode[] {
