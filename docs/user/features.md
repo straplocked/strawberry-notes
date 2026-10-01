@@ -4,7 +4,7 @@
 
 A guided tour of what you can actually *do*.
 
-**On this page:** [Time filters](#time-filters) · [Folders](#folders) · [Tags](#tags) · [Pinning](#pinning) · [Wiki-Links & Backlinks](#wiki-links--backlinks) · [Search](#search) · [Trash](#trash-soft-delete) · [Checklists](#checklists) · [Images](#images) · [Markdown Export & Import](#markdown-export--import) · [Themes & Accents](#themes--accents) · [PWA / Offline](#pwa--offline) · [Browser Web Clipper](#browser-web-clipper) · [Connecting an AI assistant (MCP)](#connecting-an-ai-assistant-mcp) · [Keyboard Shortcuts](#keyboard-shortcuts) · [What's Not Here](#whats-not-here-yet)
+**On this page:** [Time filters](#time-filters) · [Folders](#folders) · [Tags](#tags) · [Pinning](#pinning) · [Wiki-Links & Backlinks](#wiki-links--backlinks) · [Search](#search) · [Trash](#trash-soft-delete) · [Checklists](#checklists) · [Images](#images) · [Tables](#tables) · [Markdown Export & Import](#markdown-export--import) · [Themes & Accents](#themes--accents) · [PWA / Offline](#pwa--offline) · [Browser Web Clipper](#browser-web-clipper) · [Connecting an AI assistant (MCP)](#connecting-an-ai-assistant-mcp) · [Keyboard Shortcuts](#keyboard-shortcuts) · [What's Not Here](#whats-not-here-yet)
 
 ---
 
@@ -135,6 +135,16 @@ Tip: if you're about to delete something you're unsure about, just trash it. It 
 - Per-file size limit depends on your deployment (default 10 MB; ask your admin if it's different).
 - Images are stored on the server and only visible to you. They will not be shared across accounts.
 - When you hard-delete a note, its images are removed from disk automatically.
+
+---
+
+## Tables
+
+- Open the three-dots **More** menu (next to Share in the toolbar; on mobile it's the same icon in the top bar) and choose **Insert table** to drop in a 3×3 table with a header row.
+- While your cursor is inside a table, the **More** menu grows a few extra rows: add a row above/below, delete the current row, add a column left/right, delete the current column, and delete the whole table.
+- Tab moves to the next cell; Shift+Tab moves back.
+- A table wider than the page scrolls horizontally on its own — the rest of the note doesn't widen with it. Handy on a phone screen.
+- Tables round-trip to and from Markdown as standard [GFM pipe tables](https://github.github.com/gfm/#tables-extension-) — alignment, bold/italic/code inside cells, and `|` characters inside a cell all survive export and re-import, whether that's the per-note **Export as Markdown**, the full **ZIP** backup, or an MCP tool reading/writing a note.
 
 ---
 

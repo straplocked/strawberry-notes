@@ -5,6 +5,19 @@
 
 ---
 
+## Run 10 — 2026-10-01
+
+**Summary:** Task 07 PR T — GFM tables in the editor. New dep `@tiptap/extension-table` (pinned to `3.22.3` to match the rest of the TipTap family; `^3.22.3` alone resolves `@tiptap/core`/`@tiptap/pm` to a newer, incompatible minor and breaks the Turbopack build). Tables render and edit via `Table` + `TableRow` + `TableHeader` + `TableCell`, insert/row/column/delete actions live in the "More" menu (desktop and mobile), and `lib/markdown/{to,from}-markdown.ts` gained a GFM pipe-table serializer/parser (alignment, escaped pipes, `<br>`-joined multi-paragraph cells) that every existing markdown path (MCP, per-note export, ZIP export, import) picks up for free since they all funnel through those two functions. This run documents the feature; it doesn't touch doc process (no large-file splits triggered).
+
+**Files modified:**
+
+- `docs/technical/editor.md` — `Extensions` list gains `Table`/`TableRow`/`TableHeader`/`TableCell`. New **Tables** section (insertion, row/column/delete actions, `.tableWrapper` horizontal-scroll styling, the GFM serialization rules: per-column alignment, pipe escaping, multi-paragraph/`<br>` cells, empty cells). `Markdown Round-Trip`'s covered/not-covered lines updated — tables move from "not covered" to covered; raw HTML gains a carve-out for the literal `<br>` used inside table cells.
+- `docs/technical/README.md` — `editor.md` row in the Quick Orientation table gains "tables".
+- `docs/user/features.md` — new **Tables** section between **Images** and **Markdown Export & Import**, with a TOC entry. Covers inserting a table, the row/column/delete-table actions, Tab navigation, horizontal scroll on a wide table, and the Markdown round-trip guarantee.
+- `DOC_UPDATE.md` — Run counter 9 → 10; last-run date 2026-10-01.
+
+---
+
 ## Run 9 — 2026-09-30
 
 **Summary:** v1.6 — **read-only token scope** (task 04 PR B, migration `0015_token_scope.sql`). `api_tokens` gains a `scope` (`read` | `write`) column, `DEFAULT 'write' NOT NULL` so every token minted before this feature shipped keeps full access. New tokens default to **Read** in the Tokens UI; a `read` token's MCP server never registers the write tools (`create_note`, `update_note`, `delete_note`, `create_folder`, `update_folder`, `rename_tag`, `delete_tag`, `add_tag`, `remove_tag` — absent from `tools/list`, not present-but-rejected) and gets `403` from `POST /api/notes/import`, the only REST write route a bearer token can reach. The web clipper needs a **write** token for this reason. Code PR, doc pass bundled in.

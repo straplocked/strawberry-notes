@@ -208,3 +208,41 @@
   border-color: var(--berry);
 }
 
+/* GFM tables (@tiptap/extension-table, configured with `renderWrapper:
+   true`). The wrapper div is what makes a table wider than the reading
+   column scroll horizontally instead of forcing the whole page to scroll —
+   matters most on mobile, where `.page` has little room to spare. Colors
+   are all CSS custom properties already re-themed for light/dark in
+   globals.css, so the table needs no theme-specific rules of its own. */
+.pm :global(.tableWrapper) {
+  overflow-x: auto;
+  margin: 16px 0;
+  max-width: 100%;
+}
+
+.pm table {
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.pm table td,
+.pm table th {
+  border: 1px solid var(--hair);
+  padding: 6px 10px;
+  min-width: 90px;
+  vertical-align: top;
+}
+
+.pm table th {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+  text-align: left;
+}
+
+.pm table p {
+  margin: 0;
+}
+

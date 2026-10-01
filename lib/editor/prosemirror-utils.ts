@@ -43,6 +43,7 @@ const BLOCK_TYPES = new Set([
   'listItem',
   'taskItem',
   'horizontalRule',
+  'tableRow',
 ]);
 
 /** Produce a short snippet for the note list (first non-title prose line). */

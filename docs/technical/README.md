@@ -8,7 +8,7 @@ Audience: engineers extending, operating, or reviewing Strawberry Notes.
 | [database.md](database.md)                 | Drizzle schema, indexes, migrations, full-text search, pgvector.      |
 | [api-reference.md](api-reference.md)       | REST endpoints: methods, auth, request/response shapes.               |
 | [auth.md](auth.md)                         | Auth.js v5 config, JWT session, protection model, signup flow.        |
-| [editor.md](editor.md)                     | TipTap setup, content storage, markdown round-trip, wiki-links.       |
+| [editor.md](editor.md)                     | TipTap setup, content storage, markdown round-trip, tables, wiki-links. |
 | [uploads.md](uploads.md)                   | Local storage layout, validation, serving, ownership, attachment GC.  |
 | [frontend.md](frontend.md)                 | Component map, state model, styling/theming approach.                 |
 | [testing.md](testing.md)                   | Vitest setup, existing coverage, gaps.                                |

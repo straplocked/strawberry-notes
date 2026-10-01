@@ -7,7 +7,7 @@ import type { Editor as TiptapEditor } from '@tiptap/react';
 import { timeRangeLabel } from '@/lib/notes/time-range';
 import { Sidebar } from './Sidebar';
 import { NoteList } from './NoteList';
-import { Editor } from './Editor';
+import { Editor, tableActions } from './Editor';
 import { TweaksPanel } from './Tweaks';
 import { MobileTopBar, type MobilePane } from './MobileTopBar';
 import { MobileBottomDock, MobileEditorDock, type DockTab } from './MobileBottomDock';
@@ -847,9 +847,33 @@ export function AppShell() {
         onTrashNote();
       },
     });
+    acts.push({
+      id: 'insert-table',
+      label: 'Insert table',
+      onSelect: () => {
+        close();
+        editorInstance
+          ?.chain()
+          .focus()
+          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+          .run();
+      },
+    });
+    acts.push(...tableActions(editorInstance, close));
     return acts;
+    // `editorActionsOpen` is intentionally included so the table-only rows
+    // (added/removed via `tableActions`) reflect the caret position at the
+    // moment the sheet is opened, not whatever it was when some unrelated
+    // dep last changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeNote?.id, activeNote?.pinned, activeNote?.trashedAt, activeNote?.encryption]);
+  }, [
+    activeNote?.id,
+    activeNote?.pinned,
+    activeNote?.trashedAt,
+    activeNote?.encryption,
+    editorInstance,
+    editorActionsOpen,
+  ]);
 
   const editorFolderColor = activeNoteFolder?.color ?? 'var(--ink-4)';
   const editorFolderName = activeNoteFolder?.name ?? 'Unfiled';
