@@ -45,7 +45,7 @@ The differentiation is **not** "more features than Obsidian" — it's that every
 - **`[[Wiki-link]]` backlinks** — TipTap autocomplete on `[[`, styled chips, "Linked from N" panel, MCP `get_backlinks` tool. See [docs/technical/editor.md](docs/technical/editor.md).
 - **Semantic search** — pgvector + any OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, vLLM, LM Studio). Ask by meaning. `POST /api/notes/search/semantic` or MCP `search_semantic`.
 - **Full-workspace ZIP export** — one HTTP call returns every note as Markdown + every attachment + a manifest. See `/api/export/all.zip`.
-- **MCP server** — connect Claude Desktop, Cursor, or any MCP-aware client; personal access tokens, SHA-256 at rest. See [docs/technical/mcp.md](docs/technical/mcp.md).
+- **MCP server** — connect Claude Desktop, Cursor, or any MCP-aware client; personal access tokens, SHA-256 at rest, read/write scope (new tokens default to read-only). See [docs/technical/mcp.md](docs/technical/mcp.md).
 - **Web clipper** — MV3 Chrome + Firefox extension in [`extension/`](extension/). See [docs/technical/extension.md](docs/technical/extension.md).
 - **Attachment GC** — orphan sweep with a 5-minute grace window keeps your `uploads/` volume honest.
 

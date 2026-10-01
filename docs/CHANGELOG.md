@@ -5,6 +5,20 @@
 
 ---
 
+## Run 9 — 2026-09-30
+
+**Summary:** v1.6 — **read-only token scope** (task 04 PR B, migration `0015_token_scope.sql`). `api_tokens` gains a `scope` (`read` | `write`) column, `DEFAULT 'write' NOT NULL` so every token minted before this feature shipped keeps full access. New tokens default to **Read** in the Tokens UI; a `read` token's MCP server never registers the write tools (`create_note`, `update_note`, `delete_note`, `create_folder`, `update_folder`, `rename_tag`, `delete_tag`, `add_tag`, `remove_tag` — absent from `tools/list`, not present-but-rejected) and gets `403` from `POST /api/notes/import`, the only REST write route a bearer token can reach. The web clipper needs a **write** token for this reason. Code PR, doc pass bundled in.
+
+**Files modified:**
+
+- `docs/technical/mcp.md` — Authentication section gains a **Scope (v1.6)** paragraph; Tool Reference table gains a `Scope` column (`read` | `write`) per tool with an explanatory line about tools being absent from `tools/list` rather than rejected; Security Notes' "no scopes in v1" bullet rewritten to describe the read/write line and that Private Notes stay invisible regardless of scope; Implementation Map gains the migration-0015 cross-reference and the import-route scope check.
+- `docs/technical/api-reference.md` — `POST /api/notes/import` gains a paragraph on the `403` a read token gets; `GET /api/tokens` response shape and `POST /api/tokens` request/response shapes gain the `scope` field, with the UI's read-default behaviour noted.
+- `docs/technical/extension.md` — Configure step 1 and the Security Notes tokens bullet both now say the clipper needs a **write**-scoped token, since clipping goes through `POST /api/notes/import`.
+- `README.md` — MCP server bullet gains "read/write scope (new tokens default to read-only)".
+- `DOC_UPDATE.md` — Run counter 8 → 9; last-run date 2026-09-30.
+
+---
+
 ## Run 8 — 2026-05-03
 
 **Summary:** Private Notes cleanup pass. Two follow-up code PRs landed after the v1.5 doc pass and need to be reflected: PR #57 (the optimistic-update fix so the list view flips immediately on a lock toggle — purely internal cache plumbing) and PR #58 (the conditional **🔒 Private** sidebar row that appears once `noteCounts.private > 0`, including a new `folder=private` token on `GET /api/notes` and a new `private: number` field in `NoteCountsDTO`). This run threads those through `api-reference.md`, `private-notes.md`, and `features.md`. No code changes.

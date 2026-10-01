@@ -267,6 +267,8 @@ Used by the browser web-clipper extension (`extension/`). Response:
 Auth: accepts either the session cookie or `Authorization: Bearer <snb_...>`.
 Responds to `OPTIONS` (CORS preflight).
 
+**Token scope (task 04 PR B):** a `read`-scoped bearer token gets `403 { "error": "read-only token cannot import notes" }` — this is the only REST write route a bearer token can currently reach, so it's the enforcement point for "read tokens can't write." Session auth and `write`-scoped tokens are unaffected. The web clipper always needs a `write` token for this reason — see [mcp.md](mcp.md#security-notes) and [extension.md](extension.md).
+
 ### `GET /api/export/all.zip`
 
 Streams every note and referenced attachment for the current user as a single
@@ -442,13 +444,13 @@ Gated by the session cookie (`requireUserId()`), not by a bearer token — you m
 
 ### `GET /api/tokens`
 
-List the signed-in user's non-revoked tokens. Token bodies are never returned; only `{ id, name, prefix, lastUsedAt, createdAt }`. Ordered `createdAt DESC`.
+List the signed-in user's non-revoked tokens. Token bodies are never returned; only `{ id, name, prefix, scope, lastUsedAt, createdAt }`. Ordered `createdAt DESC`.
 
 ### `POST /api/tokens`
 
-Request: `{ "name": "Claude Desktop" }` (1–80 chars).
+Request: `{ "name": "Claude Desktop", "scope": "read" | "write" }` (name: 1–80 chars). `scope` defaults to `"read"` when omitted — see [mcp.md](mcp.md#security-notes) for what each scope can do. The Tokens UI always sends an explicit value from its scope selector, itself defaulted to Read.
 
-Response: `{ id, name, prefix, token }`. The `token` field (`snb_...`) is returned **once**; only its SHA-256 hash is persisted.
+Response: `{ id, name, prefix, scope, token }`. The `token` field (`snb_...`) is returned **once**; only its SHA-256 hash is persisted.
 
 ### `DELETE /api/tokens/:id`
 

@@ -1,0 +1,14 @@
+-- Read-only token scope (task 04 PR B). `api_tokens.scope` gates what a
+-- bearer token can do: 'write' (default) is today's full-access behaviour,
+-- 'read' excludes write MCP tools and 403s on POST /api/notes/import (see
+-- lib/mcp/server.ts and app/api/notes/import/route.ts).
+--
+-- DEFAULT 'write' NOT NULL so every row that exists before this migration
+-- runs — i.e. every token minted under the pre-scope world — keeps full
+-- access. Postgres applies a column default to existing rows as part of
+-- this single ALTER (fast default, no table rewrite needed for a constant),
+-- so no separate backfill UPDATE is required. New tokens default to
+-- read-only in the Tokens UI (the create-token form's scope selector), not
+-- at this column's default — see docs/technical/mcp.md and
+-- components/app/settings/TokensSection.tsx.
+ALTER TABLE "api_tokens" ADD COLUMN "scope" text DEFAULT 'write' NOT NULL;

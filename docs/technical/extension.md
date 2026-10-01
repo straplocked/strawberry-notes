@@ -48,7 +48,9 @@ npm run build                     # produces extension/dist/
 
 ### Configure
 
-1. In the app, sign in, go to **Settings → Personal Access Tokens**, create a token, copy it.
+1. In the app, sign in, go to **Settings → Personal Access Tokens**, create a token with scope
+   **Read & write** (the clipper calls `POST /api/notes/import`, which a Read-only token gets
+   `403` from — see [mcp.md](mcp.md#security-notes)), copy it.
 2. Click the extension icon, paste:
    - **Server URL** (e.g. `http://localhost:3200` or `https://notes.example.com`)
    - **Access token** (`snb_...`)
@@ -111,7 +113,7 @@ Two routes were widened to support the extension. Both changes are additive and 
 ## Security considerations
 
 - Tokens live in `chrome.storage.local` (never `sync`, never written to content script, never logged).
-- Tokens carry the same access as the user's password — no scopes in v1.2. Revoke in Settings on compromise.
+- Tokens have a `read` / `write` scope (v1.6, see [mcp.md](mcp.md#authentication)) — the clipper needs a **write** token since clipping imports a new note; a `read` token gets `403` from `POST /api/notes/import`. Revoke in Settings on compromise.
 - **Private Notes are invisible to the clipper.** The clipper authenticates with the same `apiTokens` table MCP uses, so Private Notes (see [private-notes.md](private-notes.md)) are excluded from any read the clipper performs against `/api/notes/*`. The clipper is write-only in practice — it `POST`s to `/api/notes/import` — so the visibility constraint mostly matters for any future "read existing notes from the clipper popup" feature.
 - `turndown` is bundled — no remote code fetch at runtime (MV3 forbids it).
 - Permissions are minimal: `activeTab`, `scripting`, `storage`, `<all_urls>`. `<all_urls>` is justified by "clip any page"; the content script runs only on user-initiated click.

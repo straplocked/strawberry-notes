@@ -8,16 +8,26 @@ const TOKEN_PREFIX = 'snb_';
 const TOKEN_BYTES = 32;
 const DISPLAY_PREFIX_LEN = 8;
 
+/**
+ * 'write' carries the same full access a token has always had. 'read' gets
+ * no write MCP tools (lib/mcp/server.ts), 403s on POST /api/notes/import,
+ * and is otherwise unchanged — same read access, same Private Notes
+ * exclusion. See docs/technical/mcp.md.
+ */
+export type TokenScope = 'read' | 'write';
+
 export interface IssuedToken {
   id: string;
   token: string;
   prefix: string;
+  scope: TokenScope;
 }
 
 export interface TokenSummary {
   id: string;
   name: string;
   prefix: string;
+  scope: TokenScope;
   lastUsedAt: string | null;
   createdAt: string;
 }
@@ -34,6 +44,7 @@ export interface IssueTokenOpts {
 export async function issueToken(
   userId: string,
   name: string,
+  scope: TokenScope,
   opts: IssueTokenOpts = {},
 ): Promise<IssuedToken> {
   const body = randomBytes(TOKEN_BYTES).toString('hex');
@@ -43,19 +54,19 @@ export async function issueToken(
   const cleanName = name.trim().slice(0, 80) || 'token';
   const [row] = await db
     .insert(apiTokens)
-    .values({ userId, name: cleanName, prefix, tokenHash })
+    .values({ userId, name: cleanName, prefix, tokenHash, scope })
     .returning({ id: apiTokens.id });
   void notifyTokenCreated(userId, {
     tokenName: cleanName,
     tokenPrefix: prefix,
     baseUrl: opts.baseUrl,
   });
-  return { id: row.id, token, prefix };
+  return { id: row.id, token, prefix, scope };
 }
 
 export async function verifyBearerToken(
   raw: string,
-): Promise<{ userId: string; tokenId: string } | null> {
+): Promise<{ userId: string; tokenId: string; scope: TokenScope } | null> {
   if (!raw || !raw.startsWith(TOKEN_PREFIX)) return null;
   // Join `users` and reject when the account is disabled. An admin disabling
   // a user (`lib/auth/user-admin.ts`) is meant to immediately cut off *every*
@@ -68,6 +79,7 @@ export async function verifyBearerToken(
     .select({
       id: apiTokens.id,
       userId: apiTokens.userId,
+      scope: apiTokens.scope,
       disabledAt: users.disabledAt,
     })
     .from(apiTokens)
@@ -79,7 +91,7 @@ export async function verifyBearerToken(
     .set({ lastUsedAt: new Date() })
     .where(eq(apiTokens.id, row.id))
     .catch(() => {});
-  return { userId: row.userId, tokenId: row.id };
+  return { userId: row.userId, tokenId: row.id, scope: (row.scope as TokenScope) ?? 'write' };
 }
 
 export async function listTokensForUser(userId: string): Promise<TokenSummary[]> {
@@ -88,6 +100,7 @@ export async function listTokensForUser(userId: string): Promise<TokenSummary[]>
       id: apiTokens.id,
       name: apiTokens.name,
       prefix: apiTokens.prefix,
+      scope: apiTokens.scope,
       lastUsedAt: apiTokens.lastUsedAt,
       createdAt: apiTokens.createdAt,
       revokedAt: apiTokens.revokedAt,
@@ -99,6 +112,7 @@ export async function listTokensForUser(userId: string): Promise<TokenSummary[]>
     id: r.id,
     name: r.name,
     prefix: r.prefix,
+    scope: (r.scope as TokenScope) ?? 'write',
     lastUsedAt: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
@@ -108,7 +122,9 @@ export async function revokeToken(userId: string, tokenId: string): Promise<bool
   const rows = await db
     .update(apiTokens)
     .set({ revokedAt: new Date() })
-    .where(and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)))
+    .where(
+      and(eq(apiTokens.id, tokenId), eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)),
+    )
     .returning({ id: apiTokens.id });
   return rows.length > 0;
 }

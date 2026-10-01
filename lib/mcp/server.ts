@@ -16,6 +16,7 @@ import {
 import { createFolder, FolderError, listFolders, updateFolder } from '../notes/folder-service';
 import { listBacklinks } from '../notes/link-service';
 import { deleteTag, listTags, renameTag, TagError } from '../notes/tag-service';
+import type { TokenScope } from '../auth/token';
 import type { PMDoc } from '../types';
 
 function textResult(text: string) {
@@ -42,9 +43,21 @@ function jsonResult(value: unknown) {
  * exist. The session (browser) read/write paths still reach private notes
  * via the same service functions, called from the `/api/notes/*` route
  * handlers with the default `includePrivate: true`.
+ *
+ * `scope` (task 04 PR B, `api_tokens.scope`) gates which tools even get
+ * registered: a `'read'` token's server never registers `create_note`,
+ * `update_note`, `delete_note`, `create_folder`, `update_folder`,
+ * `rename_tag`, `delete_tag`, `add_tag`, or `remove_tag` — they are simply
+ * absent from `tools/list`, not present-but-rejected. That matters for MCP
+ * clients that build a system prompt or tool-choice policy off the
+ * advertised tool set: a write tool that exists but always 403s would still
+ * tempt a model into calling it and finding out. `'write'` (the default for
+ * every pre-existing token, see migration 0015) registers the full set,
+ * unchanged from before this task.
  */
-export function buildMcpServer(userId: string): McpServer {
+export function buildMcpServer(userId: string, scope: TokenScope = 'write'): McpServer {
   const server = new McpServer({ name: 'strawberry-notes', version: '1.0.0' });
+  const canWrite = scope === 'write';
 
   // Bound once so each tool body just spreads it into its options arg. Used
   // by both read tools and write tools (update/delete/add_tag/remove_tag) —
@@ -141,93 +154,95 @@ export function buildMcpServer(userId: string): McpServer {
     },
   );
 
-  server.registerTool(
-    'create_note',
-    {
-      description:
-        'Create a new note. Accepts optional folder id, title, markdown body, and tag names. Returns the created note.',
-      inputSchema: {
-        folderId: z.string().uuid().nullable().optional(),
-        title: z.string().max(300).optional(),
-        markdown: z.string().optional(),
-        tagNames: z.array(z.string()).optional(),
-      },
-    },
-    async ({ folderId, title, markdown, tagNames }) => {
-      const note = await createNote(userId, {
-        folderId: folderId ?? null,
-        title: title ?? '',
-        content: markdown ? markdownToDoc(markdown) : undefined,
-        tagNames,
-      });
-      return jsonResult({
-        id: note.id,
-        title: note.title,
-        folderId: note.folderId,
-        tagIds: note.tagIds,
-        updatedAt: note.updatedAt,
-      });
-    },
-  );
-
-  server.registerTool(
-    'update_note',
-    {
-      description:
-        'Update fields on an existing note. Any omitted field is left unchanged. `markdown` replaces the body.',
-      inputSchema: {
-        id: z.string().uuid(),
-        title: z.string().max(300).optional(),
-        markdown: z.string().optional(),
-        folderId: z.string().uuid().nullable().optional(),
-        pinned: z.boolean().optional(),
-        tagNames: z.array(z.string()).optional(),
-        trashed: z.boolean().optional(),
-      },
-    },
-    async ({ id, title, markdown, folderId, pinned, tagNames, trashed }) => {
-      const fresh = await updateNote(
-        userId,
-        id,
-        {
-          title,
-          content: markdown !== undefined ? markdownToDoc(markdown) : undefined,
-          folderId,
-          pinned,
-          tagNames,
-          trashed,
+  if (canWrite) {
+    server.registerTool(
+      'create_note',
+      {
+        description:
+          'Create a new note. Accepts optional folder id, title, markdown body, and tag names. Returns the created note.',
+        inputSchema: {
+          folderId: z.string().uuid().nullable().optional(),
+          title: z.string().max(300).optional(),
+          markdown: z.string().optional(),
+          tagNames: z.array(z.string()).optional(),
         },
-        mcpReadOpts,
-      );
-      if (!fresh) return { ...textResult('not found'), isError: true };
-      return jsonResult({
-        id: fresh.id,
-        title: fresh.title,
-        folderId: fresh.folderId,
-        tagIds: fresh.tagIds,
-        pinned: fresh.pinned,
-        trashedAt: fresh.trashedAt,
-        updatedAt: fresh.updatedAt,
-      });
-    },
-  );
-
-  server.registerTool(
-    'delete_note',
-    {
-      description:
-        'Delete a note. By default performs a soft delete (moves to Trash). Pass `hard: true` to permanently remove.',
-      inputSchema: {
-        id: z.string().uuid(),
-        hard: z.boolean().optional(),
       },
-    },
-    async ({ id, hard }) => {
-      const ok = await deleteNote(userId, id, { hard: !!hard, ...mcpReadOpts });
-      if (!ok) return { ...textResult('not found'), isError: true };
-      return jsonResult({ id, deleted: hard ? 'hard' : 'soft' });
-    },
-  );
+      async ({ folderId, title, markdown, tagNames }) => {
+        const note = await createNote(userId, {
+          folderId: folderId ?? null,
+          title: title ?? '',
+          content: markdown ? markdownToDoc(markdown) : undefined,
+          tagNames,
+        });
+        return jsonResult({
+          id: note.id,
+          title: note.title,
+          folderId: note.folderId,
+          tagIds: note.tagIds,
+          updatedAt: note.updatedAt,
+        });
+      },
+    );
+
+    server.registerTool(
+      'update_note',
+      {
+        description:
+          'Update fields on an existing note. Any omitted field is left unchanged. `markdown` replaces the body.',
+        inputSchema: {
+          id: z.string().uuid(),
+          title: z.string().max(300).optional(),
+          markdown: z.string().optional(),
+          folderId: z.string().uuid().nullable().optional(),
+          pinned: z.boolean().optional(),
+          tagNames: z.array(z.string()).optional(),
+          trashed: z.boolean().optional(),
+        },
+      },
+      async ({ id, title, markdown, folderId, pinned, tagNames, trashed }) => {
+        const fresh = await updateNote(
+          userId,
+          id,
+          {
+            title,
+            content: markdown !== undefined ? markdownToDoc(markdown) : undefined,
+            folderId,
+            pinned,
+            tagNames,
+            trashed,
+          },
+          mcpReadOpts,
+        );
+        if (!fresh) return { ...textResult('not found'), isError: true };
+        return jsonResult({
+          id: fresh.id,
+          title: fresh.title,
+          folderId: fresh.folderId,
+          tagIds: fresh.tagIds,
+          pinned: fresh.pinned,
+          trashedAt: fresh.trashedAt,
+          updatedAt: fresh.updatedAt,
+        });
+      },
+    );
+
+    server.registerTool(
+      'delete_note',
+      {
+        description:
+          'Delete a note. By default performs a soft delete (moves to Trash). Pass `hard: true` to permanently remove.',
+        inputSchema: {
+          id: z.string().uuid(),
+          hard: z.boolean().optional(),
+        },
+      },
+      async ({ id, hard }) => {
+        const ok = await deleteNote(userId, id, { hard: !!hard, ...mcpReadOpts });
+        if (!ok) return { ...textResult('not found'), isError: true };
+        return jsonResult({ id, deleted: hard ? 'hard' : 'soft' });
+      },
+    );
+  }
 
   server.registerTool(
     'list_folders',
@@ -235,62 +250,64 @@ export function buildMcpServer(userId: string): McpServer {
     async () => jsonResult(await listFolders(userId)),
   );
 
-  server.registerTool(
-    'create_folder',
-    {
-      description:
-        'Create a new folder. Color is a `#rrggbb` hex string; defaults to `#e33d4e`. ' +
-        'Pass `parentId` to nest the folder under another one (omit or null for top level).',
-      inputSchema: {
-        name: z.string().min(1).max(80),
-        color: z
-          .string()
-          .regex(/^#[0-9a-f]{6}$/i)
-          .optional(),
-        parentId: z.string().uuid().nullable().optional(),
+  if (canWrite) {
+    server.registerTool(
+      'create_folder',
+      {
+        description:
+          'Create a new folder. Color is a `#rrggbb` hex string; defaults to `#e33d4e`. ' +
+          'Pass `parentId` to nest the folder under another one (omit or null for top level).',
+        inputSchema: {
+          name: z.string().min(1).max(80),
+          color: z
+            .string()
+            .regex(/^#[0-9a-f]{6}$/i)
+            .optional(),
+          parentId: z.string().uuid().nullable().optional(),
+        },
       },
-    },
-    async ({ name, color, parentId }) => {
-      try {
-        return jsonResult(await createFolder(userId, { name, color, parentId }));
-      } catch (err) {
-        if (err instanceof FolderError) {
-          return { ...textResult(err.message), isError: true };
+      async ({ name, color, parentId }) => {
+        try {
+          return jsonResult(await createFolder(userId, { name, color, parentId }));
+        } catch (err) {
+          if (err instanceof FolderError) {
+            return { ...textResult(err.message), isError: true };
+          }
+          throw err;
         }
-        throw err;
-      }
-    },
-  );
+      },
+    );
 
-  server.registerTool(
-    'update_folder',
-    {
-      description:
-        'Update a folder. Any omitted field is left unchanged. Set `parentId` to null to lift a folder back to the top level. Errors if the move would create a cycle (a folder cannot be moved under one of its own descendants).',
-      inputSchema: {
-        id: z.string().uuid(),
-        name: z.string().min(1).max(80).optional(),
-        color: z
-          .string()
-          .regex(/^#[0-9a-f]{6}$/i)
-          .optional(),
-        position: z.number().int().min(0).optional(),
-        parentId: z.string().uuid().nullable().optional(),
+    server.registerTool(
+      'update_folder',
+      {
+        description:
+          'Update a folder. Any omitted field is left unchanged. Set `parentId` to null to lift a folder back to the top level. Errors if the move would create a cycle (a folder cannot be moved under one of its own descendants).',
+        inputSchema: {
+          id: z.string().uuid(),
+          name: z.string().min(1).max(80).optional(),
+          color: z
+            .string()
+            .regex(/^#[0-9a-f]{6}$/i)
+            .optional(),
+          position: z.number().int().min(0).optional(),
+          parentId: z.string().uuid().nullable().optional(),
+        },
       },
-    },
-    async ({ id, name, color, position, parentId }) => {
-      try {
-        const updated = await updateFolder(userId, id, { name, color, position, parentId });
-        if (!updated) return { ...textResult('not found'), isError: true };
-        return jsonResult(updated);
-      } catch (err) {
-        if (err instanceof FolderError) {
-          return { ...textResult(err.message), isError: true };
+      async ({ id, name, color, position, parentId }) => {
+        try {
+          const updated = await updateFolder(userId, id, { name, color, position, parentId });
+          if (!updated) return { ...textResult('not found'), isError: true };
+          return jsonResult(updated);
+        } catch (err) {
+          if (err instanceof FolderError) {
+            return { ...textResult(err.message), isError: true };
+          }
+          throw err;
         }
-        throw err;
-      }
-    },
-  );
+      },
+    );
+  }
 
   server.registerTool(
     'list_tags',
@@ -298,76 +315,78 @@ export function buildMcpServer(userId: string): McpServer {
     async () => jsonResult(await listTags(userId)),
   );
 
-  server.registerTool(
-    'rename_tag',
-    {
-      description:
-        'Rename a tag. If `name` is already used by another of the user’s tags, the two are merged — every note tagged with the source ends up tagged with the existing one, and the source is deleted. Returns `{ id, merged }`: `id` is the surviving tag, `merged` flags whether a merge happened.',
-      inputSchema: {
-        id: z.string().uuid(),
-        name: z.string().min(1).max(40),
+  if (canWrite) {
+    server.registerTool(
+      'rename_tag',
+      {
+        description:
+          'Rename a tag. If `name` is already used by another of the user’s tags, the two are merged — every note tagged with the source ends up tagged with the existing one, and the source is deleted. Returns `{ id, merged }`: `id` is the surviving tag, `merged` flags whether a merge happened.',
+        inputSchema: {
+          id: z.string().uuid(),
+          name: z.string().min(1).max(40),
+        },
       },
-    },
-    async ({ id, name }) => {
-      try {
-        const result = await renameTag(userId, id, name);
-        if (!result) return { ...textResult('not found'), isError: true };
-        return jsonResult(result);
-      } catch (err) {
-        if (err instanceof TagError) {
-          return { ...textResult(err.message), isError: true };
+      async ({ id, name }) => {
+        try {
+          const result = await renameTag(userId, id, name);
+          if (!result) return { ...textResult('not found'), isError: true };
+          return jsonResult(result);
+        } catch (err) {
+          if (err instanceof TagError) {
+            return { ...textResult(err.message), isError: true };
+          }
+          throw err;
         }
-        throw err;
-      }
-    },
-  );
-
-  server.registerTool(
-    'delete_tag',
-    {
-      description:
-        'Delete a tag. The tag is removed from every note that had it; the notes themselves are not touched.',
-      inputSchema: { id: z.string().uuid() },
-    },
-    async ({ id }) => {
-      const ok = await deleteTag(userId, id);
-      if (!ok) return { ...textResult('not found'), isError: true };
-      return jsonResult({ id, deleted: true });
-    },
-  );
-
-  server.registerTool(
-    'add_tag',
-    {
-      description:
-        'Add a tag (by name) to a note. Creates the tag if it does not exist. Idempotent.',
-      inputSchema: {
-        noteId: z.string().uuid(),
-        name: z.string().min(1).max(40),
       },
-    },
-    async ({ noteId, name }) => {
-      const tagId = await addTagToNote(userId, noteId, name, mcpReadOpts);
-      if (!tagId) return { ...textResult('note not found'), isError: true };
-      return jsonResult({ noteId, tagId });
-    },
-  );
+    );
 
-  server.registerTool(
-    'remove_tag',
-    {
-      description: 'Remove a tag (by name) from a note. Idempotent.',
-      inputSchema: {
-        noteId: z.string().uuid(),
-        name: z.string().min(1).max(40),
+    server.registerTool(
+      'delete_tag',
+      {
+        description:
+          'Delete a tag. The tag is removed from every note that had it; the notes themselves are not touched.',
+        inputSchema: { id: z.string().uuid() },
       },
-    },
-    async ({ noteId, name }) => {
-      const ok = await removeTagFromNote(userId, noteId, name, mcpReadOpts);
-      if (!ok) return { ...textResult('note not found'), isError: true };
-      return jsonResult({ noteId, name });
-    },
-  );
+      async ({ id }) => {
+        const ok = await deleteTag(userId, id);
+        if (!ok) return { ...textResult('not found'), isError: true };
+        return jsonResult({ id, deleted: true });
+      },
+    );
+
+    server.registerTool(
+      'add_tag',
+      {
+        description:
+          'Add a tag (by name) to a note. Creates the tag if it does not exist. Idempotent.',
+        inputSchema: {
+          noteId: z.string().uuid(),
+          name: z.string().min(1).max(40),
+        },
+      },
+      async ({ noteId, name }) => {
+        const tagId = await addTagToNote(userId, noteId, name, mcpReadOpts);
+        if (!tagId) return { ...textResult('note not found'), isError: true };
+        return jsonResult({ noteId, tagId });
+      },
+    );
+
+    server.registerTool(
+      'remove_tag',
+      {
+        description: 'Remove a tag (by name) from a note. Idempotent.',
+        inputSchema: {
+          noteId: z.string().uuid(),
+          name: z.string().min(1).max(40),
+        },
+      },
+      async ({ noteId, name }) => {
+        const ok = await removeTagFromNote(userId, noteId, name, mcpReadOpts);
+        if (!ok) return { ...textResult('note not found'), isError: true };
+        return jsonResult({ noteId, name });
+      },
+    );
+  }
 
   server.registerTool(
     'get_backlinks',

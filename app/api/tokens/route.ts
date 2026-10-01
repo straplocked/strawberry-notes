@@ -14,6 +14,11 @@ export async function GET() {
 
 const CreateBody = z.object({
   name: z.string().min(1).max(80),
+  // Defaults to 'read' when the caller omits it (Chris's call: new tokens
+  // default to read-only). The Tokens UI's create-token form always sends
+  // an explicit value from its scope selector, itself defaulted to Read —
+  // this default only matters for a direct API call that skips the field.
+  scope: z.enum(['read', 'write']).default('read'),
 });
 
 // 20 token mints per user per hour. Token creation is rare in normal use and
@@ -31,7 +36,7 @@ export async function POST(req: Request) {
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const issued = await issueToken(a.userId, parsed.data.name, {
+  const issued = await issueToken(a.userId, parsed.data.name, parsed.data.scope, {
     baseUrl: getPublicBaseUrl(req),
   });
   // The raw `token` is returned to the caller ONCE; only the hash is retained server-side.
@@ -39,6 +44,7 @@ export async function POST(req: Request) {
     id: issued.id,
     name: parsed.data.name,
     prefix: issued.prefix,
+    scope: issued.scope,
     token: issued.token,
   });
 }
