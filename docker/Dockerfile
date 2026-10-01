@@ -14,7 +14,19 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Next.js reads NEXT_TELEMETRY_DISABLED during build.
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# next/font/google downloads the three app/layout.tsx fonts at build time.
+# Next's own retry gives up within ~1s (3 tries, 100ms backoff), and GitHub-
+# hosted runners occasionally lose Google's font CDN for longer than that.
+# Retry the whole build with a real backoff — but only for that failure, so
+# genuine build errors still fail on the first attempt.
+RUN set -o pipefail; \
+    for attempt in 1 2 3; do \
+      npm run build 2>&1 | tee /tmp/build.log && exit 0; \
+      grep -qE 'from Google Fonts|fonts\.(googleapis|gstatic)\.com' /tmp/build.log || exit 1; \
+      [ "$attempt" -lt 3 ] || exit 1; \
+      echo "Google Fonts fetch failed (attempt $attempt/3); retrying in $((attempt * 20))s" >&2; \
+      sleep $((attempt * 20)); \
+    done
 
 # --- runner -------------------------------------------------------------
 FROM node:24-alpine AS runner
