@@ -14,7 +14,7 @@ async function handle(req: Request): Promise<Response> {
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
-  const server = buildMcpServer(auth.userId);
+  const server = buildMcpServer(auth.userId, auth.scope);
   await server.connect(transport);
   try {
     return await transport.handleRequest(req);

@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // `lastUsedAt` update.
 const state = {
   /** Row returned by the mocked SELECT; null simulates "no matching token". */
-  row: null as { id: string; userId: string; disabledAt: Date | null } | null,
+  row: null as { id: string; userId: string; scope: string; disabledAt: Date | null } | null,
 };
 
 vi.mock('../db/client', () => ({
@@ -47,9 +47,9 @@ describe('verifyBearerToken — early-return paths (no DB)', () => {
 
 describe('verifyBearerToken — disabled-user rejection (task 04 PR A)', () => {
   it('accepts a valid token for an enabled user', async () => {
-    state.row = { id: 'token-1', userId: 'user-1', disabledAt: null };
+    state.row = { id: 'token-1', userId: 'user-1', scope: 'write', disabledAt: null };
     const result = await verifyBearerToken(`snb_${'a'.repeat(64)}`);
-    expect(result).toEqual({ userId: 'user-1', tokenId: 'token-1' });
+    expect(result).toEqual({ userId: 'user-1', tokenId: 'token-1', scope: 'write' });
   });
 
   it('rejects a token whose owning user has been disabled', async () => {
@@ -60,7 +60,12 @@ describe('verifyBearerToken — disabled-user rejection (task 04 PR A)', () => {
     // act through it — same intent as the credentials provider's
     // `if (user.disabledAt) return null` (lib/auth.ts) and proxy mode's
     // per-request re-check (lib/auth/require.ts).
-    state.row = { id: 'token-1', userId: 'user-1', disabledAt: new Date('2026-01-01') };
+    state.row = {
+      id: 'token-1',
+      userId: 'user-1',
+      scope: 'write',
+      disabledAt: new Date('2026-01-01'),
+    };
     const result = await verifyBearerToken(`snb_${'a'.repeat(64)}`);
     expect(result).toBeNull();
   });
@@ -69,5 +74,19 @@ describe('verifyBearerToken — disabled-user rejection (task 04 PR A)', () => {
     state.row = null;
     const result = await verifyBearerToken(`snb_${'a'.repeat(64)}`);
     expect(result).toBeNull();
+  });
+});
+
+describe('verifyBearerToken — scope (task 04 PR B)', () => {
+  it('returns the read scope for a read-scoped token', async () => {
+    state.row = { id: 'token-2', userId: 'user-1', scope: 'read', disabledAt: null };
+    const result = await verifyBearerToken(`snb_${'b'.repeat(64)}`);
+    expect(result).toEqual({ userId: 'user-1', tokenId: 'token-2', scope: 'read' });
+  });
+
+  it('returns the write scope for a write-scoped token', async () => {
+    state.row = { id: 'token-3', userId: 'user-1', scope: 'write', disabledAt: null };
+    const result = await verifyBearerToken(`snb_${'c'.repeat(64)}`);
+    expect(result).toEqual({ userId: 'user-1', tokenId: 'token-3', scope: 'write' });
   });
 });

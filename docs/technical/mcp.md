@@ -34,31 +34,35 @@ Tokens are revocable on the same page. A revoked token fails all future `/api/mc
 
 Token format: `snb_` + 64 hex chars (32 random bytes). The first 12 chars are stored as a display prefix so you can identify tokens in the UI.
 
+**Scope (v1.6):** every token is `read` or `write`. New tokens default to **Read** in the Tokens UI — pick **Read & write** explicitly for a client that needs to create, edit, or clip. A `read` token's MCP server never registers the write tools (they're absent from `tools/list`, not present-but-rejected — see the Tool Reference below) and gets `403` from `POST /api/notes/import`. Every token that existed before this feature shipped (migration `0015_token_scope.sql`) kept `write` — the column defaults to `'write'`, so no existing client silently lost access.
+
 ---
 
 ## Tool Reference
 
 All tools act on the authenticated user. Cross-user access is structurally impossible — the user id is bound to the server instance at request time and never comes from tool arguments.
 
-| Tool                   | Inputs                                                                                          | Result                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `list_notes`           | `folder?`, `tag?`, `q?`                                                                         | Array of note summaries (id, title, snippet, …). |
-| `search_notes`         | `query`                                                                                         | Same shape as `list_notes`, filtered by FTS (keyword / exact string). |
-| `search_semantic`      | `query`, `k?` (default 10, max 50)                                                              | Same shape as `list_notes` plus a `score` field (cosine similarity in [0, 1]). Requires an embedding provider (see [deployment.md](deployment.md)); errors cleanly if unset. |
-| `get_note`             | `id`                                                                                            | Full note **as Markdown** plus metadata.          |
-| `create_note`          | `folderId?`, `title?`, `markdown?`, `tagNames?`                                                 | Created note summary.                             |
-| `update_note`          | `id`, `title?`, `markdown?`, `folderId?`, `pinned?`, `tagNames?`, `trashed?`                    | Updated note summary.                             |
-| `delete_note`          | `id`, `hard?` (default `false` — soft delete / Trash)                                           | `{ id, deleted: "soft" \| "hard" }`.             |
-| `list_folders`         | —                                                                                               | Array of folders with counts and `parentId` for nesting. |
-| `create_folder`        | `name`, `color?` (`#rrggbb`), `parentId?` (uuid \| null)                                        | Created folder. `parentId` nests under another folder; omit / null for top-level. |
-| `update_folder`        | `id`, `name?`, `color?`, `position?`, `parentId?`                                               | Updated folder. Errors with `parent-cycle` if the move would close a cycle. |
-| `list_tags`            | —                                                                                               | Array of tags with counts.                        |
-| `add_tag`              | `noteId`, `name`                                                                                | `{ noteId, tagId }`. Idempotent.                 |
-| `remove_tag`           | `noteId`, `name`                                                                                | `{ noteId, name }`. Idempotent.                  |
-| `rename_tag`           | `id`, `name`                                                                                    | `{ id, merged }` — pure rename, or merge into an existing tag if the name collides. |
-| `delete_tag`           | `id`                                                                                            | `{ id, deleted: true }`. Removes the tag from every note. |
-| `get_backlinks`        | `id`                                                                                            | Notes that link to this one via `[[Title]]`, newest-updated first. Useful for graph traversal. |
-| `export_note_markdown` | `id`                                                                                            | Plain Markdown text of the note.                  |
+The **Scope** column is which token scope (v1.6, see Authentication above) gets each tool registered at all. A `read` token's `tools/list` simply omits every row marked `write` — there is no call-and-get-rejected step, the tool doesn't exist for that session. See [Security Notes](#security-notes).
+
+| Tool                   | Scope | Inputs                                                                                          | Result                                            |
+| ---------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `list_notes`           | read  | `folder?`, `tag?`, `q?`                                                                         | Array of note summaries (id, title, snippet, …). |
+| `search_notes`         | read  | `query`                                                                                         | Same shape as `list_notes`, filtered by FTS (keyword / exact string). |
+| `search_semantic`      | read  | `query`, `k?` (default 10, max 50)                                                              | Same shape as `list_notes` plus a `score` field (cosine similarity in [0, 1]). Requires an embedding provider (see [deployment.md](deployment.md)); errors cleanly if unset. |
+| `get_note`             | read  | `id`                                                                                            | Full note **as Markdown** plus metadata.          |
+| `create_note`          | write | `folderId?`, `title?`, `markdown?`, `tagNames?`                                                 | Created note summary.                             |
+| `update_note`          | write | `id`, `title?`, `markdown?`, `folderId?`, `pinned?`, `tagNames?`, `trashed?`                    | Updated note summary.                             |
+| `delete_note`          | write | `id`, `hard?` (default `false` — soft delete / Trash)                                           | `{ id, deleted: "soft" \| "hard" }`.             |
+| `list_folders`         | read  | —                                                                                               | Array of folders with counts and `parentId` for nesting. |
+| `create_folder`        | write | `name`, `color?` (`#rrggbb`), `parentId?` (uuid \| null)                                        | Created folder. `parentId` nests under another folder; omit / null for top-level. |
+| `update_folder`        | write | `id`, `name?`, `color?`, `position?`, `parentId?`                                               | Updated folder. Errors with `parent-cycle` if the move would close a cycle. |
+| `list_tags`            | read  | —                                                                                               | Array of tags with counts.                        |
+| `add_tag`              | write | `noteId`, `name`                                                                                | `{ noteId, tagId }`. Idempotent.                 |
+| `remove_tag`           | write | `noteId`, `name`                                                                                | `{ noteId, name }`. Idempotent.                  |
+| `rename_tag`           | write | `id`, `name`                                                                                    | `{ id, merged }` — pure rename, or merge into an existing tag if the name collides. |
+| `delete_tag`           | write | `id`                                                                                            | `{ id, deleted: true }`. Removes the tag from every note. |
+| `get_backlinks`        | read  | `id`                                                                                            | Notes that link to this one via `[[Title]]`, newest-updated first. Useful for graph traversal. |
+| `export_note_markdown` | read  | `id`                                                                                            | Plain Markdown text of the note.                  |
 
 ### Content format
 
@@ -145,8 +149,8 @@ curl -s -X POST https://notes.example.com/api/mcp \
 
 ## Security Notes
 
-- Tokens grant the same access as the user's password (no scopes in v1). Treat them accordingly; use one per client and revoke on compromise.
-- **Private Notes are invisible to MCP.** Any note the user has marked Private (see [private-notes.md](private-notes.md)) is excluded from `list_notes` / `search_notes` / `search_semantic`, returns "not found" from `get_note` / `export_note_markdown`, and is omitted from `get_backlinks`. The bodies are AES-256-GCM ciphertext that the server cannot read; even if MCP wanted to surface them, there is nothing to surface.
+- **Token scope (v1.6).** A token is `read` or `write`; a `write` token still grants everything a `read` token can do plus the write tools and `POST /api/notes/import`. There is no finer-grained scope (per-folder, per-tool, etc.) in v1.6 — it is a single read/write line. Use one token per client, pick the narrowest scope the client needs, and revoke on compromise.
+- **Private Notes are invisible to MCP**, regardless of scope. Any note the user has marked Private (see [private-notes.md](private-notes.md)) is excluded from `list_notes` / `search_notes` / `search_semantic`, returns "not found" from `get_note` / `export_note_markdown`, and is omitted from `get_backlinks`. The bodies are AES-256-GCM ciphertext that the server cannot read; even if MCP wanted to surface them, there is nothing to surface.
 - Rate limiting is **not** implemented in the app. Put it in the reverse proxy if you expose the endpoint publicly (Caddy, nginx, Cloudflare).
 - The endpoint does not participate in cookie-based auth — it cannot be triggered from a malicious page in the user's browser.
 - Uploads (image attachments) are out of scope for MCP in v1 — they remain browser-only.
@@ -161,7 +165,8 @@ curl -s -X POST https://notes.example.com/api/mcp \
 - Bearer guard: [lib/auth/require-api.ts](../../lib/auth/require-api.ts)
 - Token endpoints: [app/api/tokens/route.ts](../../app/api/tokens/route.ts), [app/api/tokens/[id]/route.ts](../../app/api/tokens/[id]/route.ts)
 - Settings UI: [app/(app)/settings/page.tsx](../../app/(app)/settings/page.tsx), [components/app/settings/TokensSection.tsx](../../components/app/settings/TokensSection.tsx)
-- Schema: `apiTokens` in [lib/db/schema.ts](../../lib/db/schema.ts); migration [drizzle/0002_api_tokens.sql](../../drizzle/0002_api_tokens.sql)
+- Schema: `apiTokens` in [lib/db/schema.ts](../../lib/db/schema.ts); migration [drizzle/0002_api_tokens.sql](../../drizzle/0002_api_tokens.sql); `scope` column added by migration [drizzle/0015_token_scope.sql](../../drizzle/0015_token_scope.sql) (`DEFAULT 'write' NOT NULL`, so every pre-existing token kept full access)
+- Import-route scope check: [app/api/notes/import/route.ts](../../app/api/notes/import/route.ts)
 - Shared services reused by both REST and MCP:
   - [lib/notes/service.ts](../../lib/notes/service.ts) — notes CRUD + tag add/remove
   - [lib/notes/folder-service.ts](../../lib/notes/folder-service.ts) — folder list + create

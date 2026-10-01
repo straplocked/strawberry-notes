@@ -59,6 +59,17 @@ export async function POST(req: Request) {
   const a = await requireUserIdForApi(req);
   if (!a.ok) return withCors(req, a.response);
 
+  // A read-scoped token (task 04 PR B) can list/search/export but must not
+  // be able to write new notes into the account. Session auth and
+  // write-scoped tokens are unaffected — `a.scope` is always 'write' for
+  // `via: 'session'` (see lib/auth/require-api.ts).
+  if (a.scope !== 'write') {
+    return withCors(
+      req,
+      NextResponse.json({ error: 'read-only token cannot import notes' }, { status: 403 }),
+    );
+  }
+
   const contentType = req.headers.get('content-type') ?? '';
 
   if (contentType.includes('application/json')) {

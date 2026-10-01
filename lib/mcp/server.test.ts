@@ -74,47 +74,36 @@ vi.mock('../notes/service', () => ({
   // ... AND encryption IS NULL` filter produces — zero rows affected, not a
   // thrown error and not a leak of "this id exists but is private."
   updateNote: vi.fn(
-    async (
-      userId: string,
-      id: string,
-      _patch: unknown,
-      opts?: { includePrivate?: boolean },
-    ) => {
+    async (userId: string, id: string, _patch: unknown, opts?: { includePrivate?: boolean }) => {
       calls.updateNote.push({ userId, id, opts });
       if (opts?.includePrivate === false && id === 'private-id') return null;
-      return { id, title: 'Hello', folderId: null, tagIds: [], pinned: false, trashedAt: null, updatedAt: '2026-05-02T00:00:00Z' };
+      return {
+        id,
+        title: 'Hello',
+        folderId: null,
+        tagIds: [],
+        pinned: false,
+        trashedAt: null,
+        updatedAt: '2026-05-02T00:00:00Z',
+      };
     },
   ),
   deleteNote: vi.fn(
-    async (
-      userId: string,
-      id: string,
-      opts?: { hard?: boolean; includePrivate?: boolean },
-    ) => {
+    async (userId: string, id: string, opts?: { hard?: boolean; includePrivate?: boolean }) => {
       calls.deleteNote.push({ userId, id, opts });
       if (opts?.includePrivate === false && id === 'private-id') return false;
       return true;
     },
   ),
   addTagToNote: vi.fn(
-    async (
-      userId: string,
-      noteId: string,
-      name: string,
-      opts?: { includePrivate?: boolean },
-    ) => {
+    async (userId: string, noteId: string, name: string, opts?: { includePrivate?: boolean }) => {
       calls.addTagToNote.push({ userId, noteId, name, opts });
       if (opts?.includePrivate === false && noteId === 'private-id') return null;
       return 'tag-1';
     },
   ),
   removeTagFromNote: vi.fn(
-    async (
-      userId: string,
-      noteId: string,
-      name: string,
-      opts?: { includePrivate?: boolean },
-    ) => {
+    async (userId: string, noteId: string, name: string, opts?: { includePrivate?: boolean }) => {
       calls.removeTagFromNote.push({ userId, noteId, name, opts });
       if (opts?.includePrivate === false && noteId === 'private-id') return false;
       return true;
@@ -124,11 +113,7 @@ vi.mock('../notes/service', () => ({
 
 vi.mock('../embeddings/search', () => ({
   semanticSearch: vi.fn(
-    async (
-      userId: string,
-      query: string,
-      opts?: { includePrivate?: boolean; k?: number },
-    ) => {
+    async (userId: string, query: string, opts?: { includePrivate?: boolean; k?: number }) => {
       calls.semanticSearch.push({ userId, query, opts });
       return [];
     },
@@ -136,12 +121,10 @@ vi.mock('../embeddings/search', () => ({
 }));
 
 vi.mock('../notes/link-service', () => ({
-  listBacklinks: vi.fn(
-    async (userId: string, id: string, opts?: { includePrivate?: boolean }) => {
-      calls.listBacklinks.push({ userId, id, opts });
-      return [];
-    },
-  ),
+  listBacklinks: vi.fn(async (userId: string, id: string, opts?: { includePrivate?: boolean }) => {
+    calls.listBacklinks.push({ userId, id, opts });
+    return [];
+  }),
 }));
 
 vi.mock('../notes/folder-service', () => ({
@@ -375,5 +358,62 @@ describe('buildMcpServer — basic constructor', () => {
     expect(server).toBeDefined();
     // McpServer exposes the underlying Server via a `server` property.
     expect((server as unknown as { server: unknown }).server).toBeDefined();
+  });
+});
+
+describe('buildMcpServer — token scope (task 04 PR B)', () => {
+  const userId = '00000000-0000-0000-0000-000000000000';
+  const WRITE_TOOLS = [
+    'create_note',
+    'update_note',
+    'delete_note',
+    'create_folder',
+    'update_folder',
+    'rename_tag',
+    'delete_tag',
+    'add_tag',
+    'remove_tag',
+  ];
+  const READ_TOOLS = [
+    'list_notes',
+    'search_notes',
+    'search_semantic',
+    'get_note',
+    'list_folders',
+    'list_tags',
+    'get_backlinks',
+    'export_note_markdown',
+  ];
+
+  function registeredToolNames(server: ReturnType<typeof buildMcpServer>): string[] {
+    const internal = server as unknown as { _registeredTools: Record<string, unknown> };
+    return Object.keys(internal._registeredTools);
+  }
+
+  it('a read-scoped server lists no write tools', () => {
+    const server = buildMcpServer(userId, 'read');
+    const names = registeredToolNames(server);
+    for (const tool of WRITE_TOOLS) {
+      expect(names).not.toContain(tool);
+    }
+    for (const tool of READ_TOOLS) {
+      expect(names).toContain(tool);
+    }
+  });
+
+  it('a write-scoped server lists every tool (unchanged behaviour)', () => {
+    const server = buildMcpServer(userId, 'write');
+    const names = registeredToolNames(server);
+    for (const tool of [...WRITE_TOOLS, ...READ_TOOLS]) {
+      expect(names).toContain(tool);
+    }
+  });
+
+  it('omitting scope defaults to write (every pre-existing token, migration 0015)', () => {
+    const server = buildMcpServer(userId);
+    const names = registeredToolNames(server);
+    for (const tool of WRITE_TOOLS) {
+      expect(names).toContain(tool);
+    }
   });
 });

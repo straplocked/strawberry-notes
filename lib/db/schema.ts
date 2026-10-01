@@ -131,7 +131,9 @@ export const notes = pgTable(
     folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
     title: text('title').notNull().default(''),
     // ProseMirror JSON document
-    content: jsonb('content').notNull().default(sql`'{"type":"doc","content":[]}'::jsonb`),
+    content: jsonb('content')
+      .notNull()
+      .default(sql`'{"type":"doc","content":[]}'::jsonb`),
     // Flattened plain text, recomputed on save. Used for search + snippet.
     contentText: text('content_text').notNull().default(''),
     // Precomputed snippet (first non-empty prose line, max ~180 chars). Populated
@@ -159,11 +161,7 @@ export const notes = pgTable(
   (t) => ({
     userFolderIdx: index('notes_user_folder_idx').on(t.userId, t.folderId, t.updatedAt),
     userPinnedIdx: index('notes_user_pinned_idx').on(t.userId, t.pinned, t.updatedAt),
-    userTrashedIdx: index('notes_user_trashed_idx').on(
-      t.userId,
-      t.trashedAt,
-      t.updatedAt.desc(),
-    ),
+    userTrashedIdx: index('notes_user_trashed_idx').on(t.userId, t.trashedAt, t.updatedAt.desc()),
   }),
 );
 
@@ -228,6 +226,17 @@ export const apiTokens = pgTable(
     name: text('name').notNull(),
     prefix: text('prefix').notNull(),
     tokenHash: text('token_hash').notNull(),
+    // 'read' | 'write'. DEFAULT 'write' so every token minted before this
+    // column existed (migration 0015) keeps full access — a silent
+    // downgrade to 'read' would break every already-deployed MCP client /
+    // web-clipper install. NEW tokens are minted 'write' by the API layer
+    // too (lib/auth/token.ts's `issueToken` requires the caller to pass a
+    // scope explicitly) — it's only the Tokens *UI* that defaults its
+    // create-token selector to Read (see TokensSection.tsx). A read-scoped
+    // token: gets no write MCP tools registered at all (lib/mcp/server.ts),
+    // 403s on POST /api/notes/import, and is otherwise unchanged (full read
+    // access, same Private Notes exclusion as always).
+    scope: text('scope').notNull().default('write'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
