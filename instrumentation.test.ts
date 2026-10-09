@@ -20,6 +20,7 @@ afterEach(() => {
     process.env.NEXT_RUNTIME = ORIGINAL_RUNTIME;
   }
   vi.doUnmock('./lib/embeddings/availability');
+  vi.doUnmock('./lib/embeddings/worker');
 });
 
 describe('register', () => {
@@ -32,6 +33,34 @@ describe('register', () => {
     await register();
 
     expect(isEmbeddingColumnAvailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('kicks the embedding worker once at boot when pgvector is available', async () => {
+    process.env.NEXT_RUNTIME = 'nodejs';
+    vi.doMock('./lib/embeddings/availability', () => ({
+      isEmbeddingColumnAvailable: vi.fn().mockResolvedValue(true),
+    }));
+    const kickEmbeddingWorker = vi.fn();
+    vi.doMock('./lib/embeddings/worker', () => ({ kickEmbeddingWorker }));
+
+    const { register } = await import('./instrumentation');
+    await register();
+
+    expect(kickEmbeddingWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not kick the worker when pgvector is unavailable', async () => {
+    process.env.NEXT_RUNTIME = 'nodejs';
+    vi.doMock('./lib/embeddings/availability', () => ({
+      isEmbeddingColumnAvailable: vi.fn().mockResolvedValue(false),
+    }));
+    const kickEmbeddingWorker = vi.fn();
+    vi.doMock('./lib/embeddings/worker', () => ({ kickEmbeddingWorker }));
+
+    const { register } = await import('./instrumentation');
+    await register();
+
+    expect(kickEmbeddingWorker).not.toHaveBeenCalled();
   });
 
   it('is a no-op outside the nodejs runtime', async () => {

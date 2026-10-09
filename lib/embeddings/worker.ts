@@ -17,6 +17,15 @@
  * at larger scale run the backfill script (`npm run db:embed`) from one host
  * and disable the in-process worker with an env guard (follow-up).
  *
+ * Failure handling: a batch the provider rejects is retried one row at a time,
+ * so one bad row (say, an input the model refuses) can't block the other 15.
+ * Any failure reschedules the next run with doubling backoff — 30 s, 1 min,
+ * 2 min … capped at 15 min — and the first clean run resets it. The latest
+ * error and success time are kept in memory (`getEmbeddingWorkerStatus`).
+ *
+ * `instrumentation.ts` kicks the worker once at boot, so enabling embeddings
+ * on an instance with existing notes fills them in without any edits.
+ *
  * If embeddings are not configured, the worker is a no-op (no timer armed).
  */
 
@@ -34,10 +43,38 @@ import { eligibleForAiSql } from './eligible';
 const BATCH_SIZE = 16;
 const INITIAL_DELAY_MS = 500;
 const IDLE_BACKOFF_MS = 30_000;
+const ERROR_BACKOFF_BASE_MS = 30_000;
+const ERROR_BACKOFF_MAX_MS = 15 * 60_000;
 
 let inFlight = false;
 let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 let disabledLogged = false;
+let consecutiveFailures = 0;
+let lastError: string | null = null;
+let lastSuccessAt: Date | null = null;
+/** Rows that failed in the most recent `runOnce`; drives the backoff. */
+let lastRunFailed = 0;
+
+export interface EmbeddingWorkerStatus {
+  lastError: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+}
+
+/** In-memory health of this process's worker. */
+export function getEmbeddingWorkerStatus(): EmbeddingWorkerStatus {
+  return {
+    lastError,
+    lastSuccessAt: lastSuccessAt ? lastSuccessAt.toISOString() : null,
+    consecutiveFailures,
+  };
+}
+
+/** Delay before the next run after `failures` consecutive failed runs. */
+export function errorBackoffMs(failures: number): number {
+  const exp = Math.max(0, failures - 1);
+  return Math.min(ERROR_BACKOFF_MAX_MS, ERROR_BACKOFF_BASE_MS * 2 ** Math.min(exp, 10));
+}
 
 /** Schedule a worker run. Safe to call many times; runs coalesce. */
 export function kickEmbeddingWorker(delayMs: number = INITIAL_DELAY_MS): void {
@@ -55,9 +92,7 @@ export function kickEmbeddingWorker(delayMs: number = INITIAL_DELAY_MS): void {
   if (inFlight || pendingTimer) return;
   pendingTimer = setTimeout(() => {
     pendingTimer = null;
-    void runOnce().catch((err) => {
-      console.error('[embeddings] worker error', err);
-    });
+    void tick();
   }, delayMs);
   // Don't keep Node alive for a background-only timer.
   if (typeof pendingTimer === 'object' && pendingTimer && 'unref' in pendingTimer) {
@@ -65,9 +100,44 @@ export function kickEmbeddingWorker(delayMs: number = INITIAL_DELAY_MS): void {
   }
 }
 
+/** One scheduled run: process a batch, then decide when to run next. */
+async function tick(): Promise<void> {
+  let processed: number;
+  try {
+    processed = await runOnce();
+  } catch (err) {
+    onFailure(err);
+    return;
+  }
+  if (lastRunFailed > 0) {
+    onFailure(new Error(lastError ?? `${lastRunFailed} row(s) failed to embed`));
+    return;
+  }
+  consecutiveFailures = 0;
+  // A full batch means more rows may remain — re-kick soon.
+  if (processed === BATCH_SIZE) kickSoon();
+  else kickLater();
+}
+
+function onFailure(err: unknown): void {
+  consecutiveFailures += 1;
+  lastError = err instanceof Error ? err.message : String(err);
+  const delay = errorBackoffMs(consecutiveFailures);
+  console.error(
+    `[embeddings] worker error (attempt ${consecutiveFailures}); retrying in ${Math.round(delay / 1000)}s`,
+    err,
+  );
+  kickAfterBackoff(delay);
+}
+
 /**
  * Embed a single batch of stale rows. Exported for the backfill script and
- * for unit tests. Returns the number of rows processed.
+ * for unit tests. Returns the number of rows embedded. Does not schedule the
+ * next run — `tick` (timer path) and the backfill loop each decide that.
+ *
+ * If the batch call fails, each row is retried on its own; rows that still
+ * fail stay stale for a later run. Throws only when no row could be embedded
+ * (provider down, misconfigured), so the caller sees the real error.
  */
 export async function runOnce(
   opts: { fetchFn?: typeof fetch; batchSize?: number } = {},
@@ -80,6 +150,7 @@ export async function runOnce(
   if (!(await isEmbeddingColumnAvailable())) return 0;
   if (inFlight) return 0;
   inFlight = true;
+  lastRunFailed = 0;
   try {
     const batch = opts.batchSize ?? BATCH_SIZE;
     // Lock a batch of stale, eligible rows. Using `FOR UPDATE SKIP LOCKED`
@@ -104,14 +175,31 @@ export async function runOnce(
         rows: Array<{ id: string; title: string; content_text: string }>;
       }
     ).rows;
-    if (!list || list.length === 0) {
-      // Nothing to do; reschedule further out so a long-idle server doesn't
-      // hot-loop the DB.
-      kickLater();
-      return 0;
-    }
+    if (!list || list.length === 0) return 0;
     const inputs = list.map((r) => embeddingInputFor(r.title ?? '', r.content_text ?? ''));
-    const vectors = await embedBatch(inputs, { fetchFn: opts.fetchFn, config: cfg });
+    let vectors: Array<number[] | null>;
+    try {
+      vectors = await embedBatch(inputs, { fetchFn: opts.fetchFn, config: cfg });
+    } catch (batchErr) {
+      if (list.length === 1) throw batchErr;
+      // Retry row by row so one bad input doesn't block the rest of the batch.
+      vectors = [];
+      let lastRowErr: unknown = batchErr;
+      for (const input of inputs) {
+        try {
+          const [v] = await embedBatch([input], { fetchFn: opts.fetchFn, config: cfg });
+          vectors.push(v);
+        } catch (rowErr) {
+          lastRowErr = rowErr;
+          vectors.push(null);
+        }
+      }
+      const failed = vectors.filter((v) => v === null).length;
+      if (failed === list.length) throw lastRowErr;
+      lastRunFailed = failed;
+      lastError =
+        lastRowErr instanceof Error ? lastRowErr.message : String(lastRowErr ?? batchErr);
+    }
 
     // Update each row individually — PG's CASE-based update of a vector column
     // is ugly and we only batch ~16 at a time.
@@ -123,9 +211,11 @@ export async function runOnce(
     // user locks the note as Private Notes during that window, this guard is
     // what stops the freshly-computed vector from being written into a note
     // that is now supposed to have never been embedded.
+    let written = 0;
     for (let i = 0; i < list.length; i += 1) {
       const row = list[i];
       const v = vectors[i];
+      if (!v) continue;
       const literal = `[${v.join(',')}]`;
       await db.execute(sql`
         UPDATE notes
@@ -133,15 +223,10 @@ export async function runOnce(
             embedding_stale = false
         WHERE id = ${row.id} AND ${eligibleForAiSql}
       `);
+      written += 1;
     }
-
-    // More rows may remain — re-kick soon.
-    if (list.length === batch) {
-      kickSoon();
-    } else {
-      kickLater();
-    }
-    return list.length;
+    lastSuccessAt = new Date();
+    return written;
   } finally {
     inFlight = false;
   }
@@ -155,9 +240,24 @@ function kickSoon() {
 function kickLater() {
   // Long-tail sweep. In production the worker is also re-kicked on each write,
   // so this timer mostly exists to catch rows that were imported out-of-band.
+  // Deliberately NOT `pendingTimer`: a write during the idle wait should still
+  // be embedded within INITIAL_DELAY_MS.
   const t = setTimeout(() => kickEmbeddingWorker(0), IDLE_BACKOFF_MS);
   if (typeof t === 'object' && t && 'unref' in t) {
     (t as unknown as { unref(): void }).unref();
+  }
+}
+
+function kickAfterBackoff(delayMs: number) {
+  // Occupies `pendingTimer`, so write-triggered kicks during the backoff
+  // coalesce into this run instead of hammering a failing provider.
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(() => {
+    pendingTimer = null;
+    void tick();
+  }, delayMs);
+  if (typeof pendingTimer === 'object' && pendingTimer && 'unref' in pendingTimer) {
+    (pendingTimer as unknown as { unref(): void }).unref();
   }
 }
 
@@ -167,4 +267,8 @@ export function __resetWorkerForTests() {
   pendingTimer = null;
   inFlight = false;
   disabledLogged = false;
+  consecutiveFailures = 0;
+  lastError = null;
+  lastSuccessAt = null;
+  lastRunFailed = 0;
 }

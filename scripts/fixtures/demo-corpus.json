@@ -1,0 +1,298 @@
+{
+  "description": "Labelled demo corpus for Strawberry Notes: 24 notes in 4 topic clusters plus 8 search query pairs (4 paraphrases with no shared keywords, 4 exact tokens). Used by scripts/seed-demo-corpus.ts, scripts/eval-search.ts and the launch screenshots. Entirely fictional.",
+  "notes": [
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Levain build schedule",
+      "tags": [
+        "baking",
+        "schedule"
+      ],
+      "pinned": true,
+      "markdown": "## Night before\n- [x] Feed the starter 1:5:5 at 9 pm\n- [ ] Mix the levain: 20 g starter, 100 g flour, 100 g water\n\n## Bake day\nThe levain peaks around 8 am in a 22 °C kitchen. It's ready when it has doubled, smells sweet-sour and a spoonful floats.\n\nIf the kitchen is cold, put the jar in the oven with just the light on. See [[Sourdough troubleshooting log]] for what went wrong last time.\n"
+    },
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Sourdough troubleshooting log",
+      "tags": [
+        "baking"
+      ],
+      "pinned": false,
+      "markdown": "## 3 October\nGummy crumb with a few huge holes under the crust. Loaf spread sideways on the stone and never got any oven spring. Verdict: underproofed — the bulk ferment was only four hours at 19 °C.\n\n## 10 October\nGave bulk six hours with coil folds every 45 minutes. Much better rise, open crumb, ear finally showed up.\n\nNext time: tighter final shaping and a longer cold retard in the fridge.\n"
+    },
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Country loaf formula",
+      "tags": [
+        "baking",
+        "recipe"
+      ],
+      "pinned": false,
+      "markdown": "| Ingredient | Grams | Baker's % |\n| --- | ---: | ---: |\n| White flour | 900 | 90 |\n| Whole wheat | 100 | 10 |\n| Water | 750 | 75 |\n| Levain | 200 | 20 |\n| Salt | 20 | 2 |\n\nAutolyse 1 hour, add levain and salt, then bulk ferment until the dough has grown by half. Uses the [[Levain build schedule]].\n"
+    },
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Dutch oven baking notes",
+      "tags": [
+        "baking"
+      ],
+      "pinned": false,
+      "markdown": "Preheat the pot for 45 minutes at 250 °C. Lid on for 20 minutes to trap steam, lid off for another 20–25 minutes at 230 °C.\n\nParchment sling makes loading less scary. Score at 30° with a single confident stroke. Ice cube under the parchment adds a bit more blistering.\n"
+    },
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Discard crackers",
+      "tags": [
+        "recipe"
+      ],
+      "pinned": false,
+      "markdown": "Use up starter discard instead of binning it.\n\n- 200 g discard\n- 100 g flour\n- 50 g olive oil, salt, rosemary\n\nRoll thin between two sheets of parchment, cut into squares, bake at 180 °C for 25 minutes until crisp. Keeps for a week in a tin.\n"
+    },
+    {
+      "cluster": "sourdough",
+      "folder": "Kitchen",
+      "title": "Flour shopping list",
+      "tags": [
+        "shopping"
+      ],
+      "pinned": false,
+      "markdown": "- [ ] Strong white flour, 5 kg\n- [ ] Stone-ground whole wheat, 1 kg\n- [x] Rye for the starter\n- [ ] Rice flour for dusting the banneton\n\nThe mill by the farmers' market sells 10 kg sacks cheaper than the supermarket.\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "IoT VLAN segmentation",
+      "tags": [
+        "network"
+      ],
+      "pinned": true,
+      "markdown": "## Goal\nPut the cameras, plugs, TV and the robot vacuum on their own VLAN 30 so a compromised device can't reach the NAS or laptops.\n\n## Firewall rules\n1. VLAN 30 → internet: allow\n2. VLAN 30 → LAN: drop\n3. LAN → VLAN 30: allow (so Home Assistant can still poll devices)\n\nmDNS reflector is needed or the TV disappears from casting. See [[Router and switch inventory]].\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "WireGuard remote access setup",
+      "tags": [
+        "network",
+        "vpn"
+      ],
+      "pinned": false,
+      "markdown": "WireGuard listens on UDP 51820 on the router. One peer per device; phone and laptop each get their own key pair and a /32 address in 10.8.0.0/24.\n\n- AllowedIPs on the phone: 10.8.0.0/24 and 192.168.1.0/24 (split tunnel)\n- Persistent keepalive 25 s for the phone behind carrier NAT\n\nRotate keys yearly. QR code import works fine on mobile.\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "Router and switch inventory",
+      "tags": [
+        "network",
+        "hardware"
+      ],
+      "pinned": false,
+      "markdown": "| Device | Role | Firmware |\n| --- | --- | --- |\n| Router | Gateway, DHCP, firewall | 4.0.21 |\n| 24-port switch | Core, PoE for cameras | 7.1.2 |\n| Attic AP | Upstairs wifi | 6.6.77 |\n\nSpare patch cables are in the blue bin in the garage.\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "Pi-hole DNS filtering",
+      "tags": [
+        "network",
+        "dns"
+      ],
+      "pinned": false,
+      "markdown": "Pi-hole runs in a container on the NAS and hands out as the only resolver via DHCP. Upstream is a local Unbound instance doing recursive resolution.\n\nAllowlisted: the bank's analytics domain (the login page breaks without it) and the TV's firmware update host.\n\nBlocked queries usually sit around 18 % of total traffic.\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "NAS backup rotation",
+      "tags": [
+        "storage",
+        "backup"
+      ],
+      "pinned": false,
+      "markdown": "- Nightly snapshots kept for 14 days\n- Weekly copy to the USB drive, kept for 8 weeks\n- Monthly encrypted upload to off-site object storage\n\nRestore test every quarter: pull one random folder back and diff it. The last test on 1 September passed.\n"
+    },
+    {
+      "cluster": "homelab",
+      "folder": "Homelab",
+      "title": "Reverse proxy and TLS certificates",
+      "tags": [
+        "network",
+        "tls"
+      ],
+      "pinned": false,
+      "markdown": "Caddy fronts every service on the server with automatic certificates via the DNS challenge, so nothing needs port 80 open.\n\nInternal names live under a split-horizon domain; external access only goes through the VPN. Renewal logs are in the Caddy container — check them if a certificate ever shows expired.\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Hokkaido winter packing list",
+      "tags": [
+        "japan",
+        "packing"
+      ],
+      "pinned": true,
+      "markdown": "- [ ] Merino base layers (top and bottoms)\n- [ ] Down jacket and a waterproof shell\n- [ ] Insulated boots with good grip — the pavements in Sapporo are sheet ice\n- [ ] Hand warmers, buff, thick gloves\n- [x] Universal plug adapter\n\nLeave room for snacks from the airport. See [[Japan itinerary draft]].\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Japan itinerary draft",
+      "tags": [
+        "japan"
+      ],
+      "pinned": false,
+      "markdown": "## Week 1\nTokyo for three nights, then the shinkansen north to Hakodate and on to Sapporo for the snow festival.\n\n## Week 2\nOtaru day trip, two nights at an onsen ryokan near Noboribetsu, fly home from New Chitose.\n\nBook the ryokan early — February fills up months ahead.\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Japan rail pass math",
+      "tags": [
+        "japan",
+        "budget"
+      ],
+      "pinned": false,
+      "markdown": "The JR Pass for 14 days costs more than it used to after the price rise. Point-to-point tickets for our route:\n\n| Leg | Fare (yen) |\n| --- | ---: |\n| Tokyo → Hakodate | 23,000 |\n| Hakodate → Sapporo | 9,000 |\n| Sapporo → Noboribetsu (return) | 6,000 |\n\nTotal is well under the JR Pass price, so buy individual tickets.\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Lisbon weekend recommendations",
+      "tags": [
+        "portugal"
+      ],
+      "pinned": false,
+      "markdown": "- Pastéis de nata from the bakery in Belém, eat them warm\n- Tram 28 early in the morning before the crowds\n- Sunset at the Miradouro da Senhora do Monte\n- Day trip to Sintra; take the train, not a car\n\nComfortable shoes — the hills and cobblestones are relentless.\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Travel documents checklist",
+      "tags": [
+        "admin"
+      ],
+      "pinned": false,
+      "markdown": "- [ ] Passport valid for at least six months\n- [ ] Travel insurance policy number saved offline\n- [ ] Copies of bookings in a shared folder\n- [ ] Notify the bank about card use abroad\n\nKeep a photo of the passport photo page somewhere other than the phone.\n"
+    },
+    {
+      "cluster": "travel",
+      "folder": "Travel",
+      "title": "Jet lag recovery routine",
+      "tags": [
+        "health"
+      ],
+      "pinned": false,
+      "markdown": "Shift sleep one hour a day for three days before an eastbound flight. On arrival: daylight in the morning, no naps longer than 20 minutes, caffeine only before noon.\n\nEastbound is always worse than westbound for me — budget a slow first day.\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Emergency fund and sinking funds",
+      "tags": [
+        "budget",
+        "savings"
+      ],
+      "pinned": true,
+      "markdown": "## Emergency fund\nTarget: six months of essential expenses in a high-yield savings account. Currently at 4.5 months.\n\n## Sinking funds\nMonthly transfers into labelled buckets so irregular costs are never a shock:\n- Vehicle maintenance and tyres\n- Annual insurance premiums\n- Vet bills\n- Holiday gifts\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Retirement accounts: Roth IRA vs 401(k)",
+      "tags": [
+        "retirement",
+        "investing"
+      ],
+      "pinned": false,
+      "markdown": "Contribute to the 401(k) up to the employer match first. Then max the Roth IRA, since withdrawals in retirement are tax-free and our bracket is likely higher later.\n\nAnything beyond that goes back into the 401(k). Rebalance once a year in January. Related: [[Annual tax prep checklist]].\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Annual tax prep checklist",
+      "tags": [
+        "taxes"
+      ],
+      "pinned": false,
+      "markdown": "- [ ] W-2s and 1099s collected\n- [ ] Charitable donation receipts\n- [ ] HSA contribution statement\n- [ ] Last year's return for reference\n\nFile by mid-March so the refund lands before the spring travel bookings.\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Monthly budget review",
+      "tags": [
+        "budget"
+      ],
+      "pinned": false,
+      "markdown": "Second Sunday of each month, 30 minutes:\n1. Categorise uncategorised transactions\n2. Compare spending against the plan per category\n3. Move any surplus into the sinking funds\n\nDining out ran 40 % over plan in September — mostly the conference week.\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Mortgage refinance comparison",
+      "tags": [
+        "housing"
+      ],
+      "pinned": false,
+      "markdown": "| Option | Rate | Closing costs | Break-even |\n| --- | ---: | ---: | ---: |\n| Stay put | 6.8 % | 0 | — |\n| 30-year refi | 6.1 % | 4,200 | 31 months |\n| 15-year refi | 5.6 % | 4,800 | 38 months |\n\nWe plan to stay at least five years, so the 30-year refi wins on cash flow.\n"
+    },
+    {
+      "cluster": "finance",
+      "folder": "Money",
+      "title": "Subscription audit",
+      "tags": [
+        "budget"
+      ],
+      "pinned": false,
+      "markdown": "Cancelled: the second streaming service, the unused gym app, the premium weather app.\n\nKeeping: password manager, cloud backup, music.\n\nSaves about 38 a month. Set a calendar reminder to repeat this every six months.\n"
+    }
+  ],
+  "queries": [
+    {
+      "query": "why does my homemade bread come out heavy and squat",
+      "expect": "Sourdough troubleshooting log",
+      "kind": "paraphrase"
+    },
+    {
+      "query": "isolating smart gadgets from my personal computers",
+      "expect": "IoT VLAN segmentation",
+      "kind": "paraphrase"
+    },
+    {
+      "query": "clothes for freezing temperatures on our trip north",
+      "expect": "Hokkaido winter packing list",
+      "kind": "paraphrase"
+    },
+    {
+      "query": "saving up for surprise car repair costs",
+      "expect": "Emergency fund and sinking funds",
+      "kind": "paraphrase"
+    },
+    {
+      "query": "WireGuard",
+      "expect": "WireGuard remote access setup",
+      "kind": "exact"
+    },
+    {
+      "query": "levain",
+      "expect": "Levain build schedule",
+      "kind": "exact"
+    },
+    {
+      "query": "JR Pass",
+      "expect": "Japan rail pass math",
+      "kind": "exact"
+    },
+    {
+      "query": "Roth IRA",
+      "expect": "Retirement accounts: Roth IRA vs 401(k)",
+      "kind": "exact"
+    }
+  ]
+}

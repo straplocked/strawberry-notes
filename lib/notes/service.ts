@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, gte, ilike, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, gte, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client';
 import { noteLinks, noteTags, notes, tags } from '../db/schema';
 import {
@@ -15,6 +15,7 @@ import {
   unresolveLinksTo,
 } from './link-service';
 import { deleteAttachmentsForNote } from './gc';
+import { searchNotes } from './search';
 import { isTimeRange, timeRangeBounds, type TimeRange } from './time-range';
 import {
   fireNoteCreated,
@@ -65,17 +66,26 @@ const tagIdsAgg = sql<
   string[]
 >`coalesce(array_agg(${noteTags.tagId}) filter (where ${noteTags.tagId} is not null), '{}')`;
 
-export async function listNotes(
+/**
+ * Shared WHERE conditions for every notes-list read: ownership, the folder /
+ * time-range / pinned / private / trash view, the tag filter and the
+ * bearer-caller private-note exclusion. The search query (`q`) is NOT
+ * included — `searchNotes` (lib/notes/search.ts) owns matching and ranking,
+ * and reuses these conditions so filters behave identically with and
+ * without a query.
+ *
+ * Conditions reference the unaliased `notes` table.
+ */
+export function buildListConditions(
   userId: string,
   params: ListNotesParams = {},
   opts: ListNotesOptions = {},
-): Promise<NoteListItemDTO[]> {
+): SQL[] {
   const folder = params.folder ?? 'all';
   const tagId = params.tagId ?? null;
-  const q = params.q?.trim() ?? '';
   const includePrivate = opts.includePrivate ?? true;
 
-  const conditions = [eq(notes.userId, userId)];
+  const conditions: SQL[] = [eq(notes.userId, userId)];
 
   if (folder === 'pinned') {
     conditions.push(eq(notes.pinned, true));
@@ -108,18 +118,6 @@ export async function listNotes(
     );
   }
 
-  if (q.length > 0) {
-    // Primary path: the `content_tsv` GIN-indexed generated column (see drizzle/0001_fts.sql).
-    // ILIKE on title is kept as a short/prefix-query fallback; the result set is
-    // already constrained by userId so the scan is cheap.
-    conditions.push(
-      or(
-        sql`"content_tsv" @@ websearch_to_tsquery('english', ${q})`,
-        ilike(notes.title, `%${q}%`),
-      )!,
-    );
-  }
-
   // Bearer-token callers (MCP / web clipper) never see private notes. The
   // service layer can't distinguish caller context — the HTTP handler passes
   // the flag in. Belt-and-suspenders: even if the body were title-only-FTS-
@@ -127,6 +125,21 @@ export async function listNotes(
   if (!includePrivate) {
     conditions.push(isNull(notes.encryption));
   }
+
+  return conditions;
+}
+
+export async function listNotes(
+  userId: string,
+  params: ListNotesParams = {},
+  opts: ListNotesOptions = {},
+): Promise<NoteListItemDTO[]> {
+  // With a query, results are ranked by relevance (hybrid keyword + meaning
+  // when embeddings are configured) rather than by pinned / updatedAt.
+  const q = params.q?.trim() ?? '';
+  if (q.length > 0) return searchNotes(userId, { ...params, q }, opts);
+
+  const conditions = buildListConditions(userId, params, opts);
 
   const rows = await db
     .select({

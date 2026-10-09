@@ -113,6 +113,13 @@
       "when": 1790826341683,
       "tag": "0015_token_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791528508056,
+      "tag": "0016_drop_ivfflat_index",
+      "breakpoints": true
     }
   ]
 }

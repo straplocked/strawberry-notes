@@ -5,7 +5,9 @@
  * Warms the pgvector-availability cache (`lib/embeddings/availability.ts`)
  * and logs its result at boot, so operators find out immediately whether
  * semantic search is enabled instead of waiting for the first search
- * request or embedding-worker tick to trigger the check.
+ * request or embedding-worker tick to trigger the check. Then kicks the
+ * embedding worker once, so turning embeddings on for an instance with
+ * existing notes fills them in without anyone having to edit a note.
  *
  * Non-fatal by design: if the DB isn't reachable yet when this runs, the
  * check re-runs lazily (and logs then) on the first real use.
@@ -17,7 +19,10 @@ export async function register(): Promise<void> {
 
   try {
     const { isEmbeddingColumnAvailable } = await import('./lib/embeddings/availability');
-    await isEmbeddingColumnAvailable();
+    if (await isEmbeddingColumnAvailable()) {
+      const { kickEmbeddingWorker } = await import('./lib/embeddings/worker');
+      kickEmbeddingWorker();
+    }
   } catch (err) {
     console.error('[boot] pgvector availability check failed', err);
   }

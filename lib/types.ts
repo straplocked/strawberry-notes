@@ -20,6 +20,9 @@ export interface TagDTO {
   count: number;
 }
 
+/** Which half of hybrid search found a note: keyword, embedding, or both. */
+export type SearchMatch = 'text' | 'meaning' | 'both';
+
 export interface NoteListItemDTO {
   id: string;
   folderId: string | null;
@@ -35,6 +38,12 @@ export interface NoteListItemDTO {
    * the localised "🔒 Private — unlock to read" placeholder instead.
    */
   private: boolean;
+  /**
+   * Present only on search results (`q` set). `meaning` rows were found by
+   * the embedding (vector) half of hybrid search alone — no keyword hit — and
+   * NoteList marks them with `≈`. See lib/notes/search.ts.
+   */
+  matchedBy?: SearchMatch;
 }
 
 /** ProseMirror JSON document. Opaque to the client code outside the editor. */

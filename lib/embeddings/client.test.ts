@@ -13,6 +13,7 @@ import {
   EmbeddingNotConfiguredError,
   isEmbeddingConfigured,
   readEmbeddingConfig,
+  __resetEmbeddingClientForTests,
 } from './client';
 
 const OLD = { ...process.env };
@@ -23,6 +24,7 @@ beforeEach(() => {
   delete process.env.EMBEDDING_MODEL;
   delete process.env.EMBEDDING_API_KEY;
   delete process.env.EMBEDDING_DIMS;
+  __resetEmbeddingClientForTests();
 });
 
 afterEach(() => {
@@ -109,10 +111,52 @@ describe('embedBatch', () => {
     expect(url).toBe('https://api.openai.com/v1/embeddings');
     expect(init?.method).toBe('POST');
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ model: 'text-embedding-3-small', input: ['hello', 'world'] });
+    expect(body).toEqual({
+      model: 'text-embedding-3-small',
+      input: ['hello', 'world'],
+      dimensions: 3,
+    });
     const headers = init?.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['Authorization']).toBe('Bearer sk-abc');
+  });
+
+  it('retries once without `dimensions` after a 400, then stops sending it', async () => {
+    const badRequest = {
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      text: async () => '{"error":"unknown field dimensions"}',
+      json: async () => ({}),
+    } as unknown as Response;
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(badRequest)
+      .mockResolvedValue(okResponse([[1, 2]]));
+    const config = { endpoint: 'http://llama:8080/v1', model: 'm', apiKey: null, dims: 2 };
+
+    await expect(embedBatch(['x'], { fetchFn, config })).resolves.toEqual([[1, 2]]);
+    const bodies = fetchFn.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies[0].dimensions).toBe(2);
+    expect(bodies[1]).not.toHaveProperty('dimensions');
+
+    // Remembered for the process: the next call goes straight to the plain shape.
+    await embedBatch(['y'], { fetchFn, config });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(fetchFn.mock.calls[2][1]?.body))).not.toHaveProperty('dimensions');
+  });
+
+  it('does not retry a 400 that persists without `dimensions`', async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      text: async () => 'input too long',
+      json: async () => ({}),
+    } as unknown as Response);
+    const config = { endpoint: 'http://x/v1', model: 'm', apiKey: null, dims: 2 };
+    await expect(embedBatch(['x'], { fetchFn, config })).rejects.toThrow(/400.*input too long/);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   it('omits Authorization when no api key is configured', async () => {

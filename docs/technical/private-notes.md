@@ -97,6 +97,11 @@ AES-GCM payload elsewhere.
   `get_note`, `get_backlinks`, `export_note_markdown` all pass
   `{ includePrivate: false }` to the underlying service. A bearer token
   sees no private rows and gets `not found` for any private note id.
+- **Leaking through search ranking.** The meaning half of hybrid search
+  (`lib/notes/search.ts`) only ever considers rows matching
+  `eligibleForAiSql` (`encryption IS NULL AND trashed_at IS NULL`), for
+  session and bearer callers alike — a private note can match only by its
+  (plaintext) title, never by meaning.
 - **Web clipper accidentally reading private notes.** Same bearer-token path
   as MCP; the clipper inherits the invisibility.
 - **Casual operator inspection.** `SELECT title, content_text, snippet FROM

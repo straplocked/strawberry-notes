@@ -54,6 +54,16 @@ function sortList(list: NoteListItemDTO[]): NoteListItemDTO[] {
   });
 }
 
+/**
+ * Re-sort a cached list after an optimistic patch — unless it's a search
+ * result (`q` non-empty). Search lists are ranked by relevance on the server
+ * (lib/notes/search.ts); date-sorting them would shove the note you just
+ * opened from the results to the top and scramble the ranking.
+ */
+export function resortUnlessSearch(list: NoteListItemDTO[], q: string): NoteListItemDTO[] {
+  return q ? list : sortList(list);
+}
+
 export function useFolders(): UseQueryResult<FolderDTO[]> {
   return useQuery({
     queryKey: qk.folders,
@@ -214,13 +224,17 @@ function restoreLists(qc: ReturnType<typeof useQueryClient>, prev: ListEntry[]) 
 /** Apply a mapper/filter to every cached notes list. */
 function patchAllLists(
   qc: ReturnType<typeof useQueryClient>,
-  transform: (list: NoteListItemDTO[], viewKey: string) => NoteListItemDTO[],
+  transform: (list: NoteListItemDTO[], viewKey: string, q: string) => NoteListItemDTO[],
 ) {
   const entries = qc.getQueriesData<NoteListItemDTO[]>({ queryKey: ['notes'] });
   entries.forEach(([key, data]) => {
     if (!Array.isArray(data)) return;
-    const viewKey = (key as unknown[])[1];
-    const next = transform(data, typeof viewKey === 'string' ? viewKey : '');
+    const [, viewKey, q] = key as unknown[];
+    const next = transform(
+      data,
+      typeof viewKey === 'string' ? viewKey : '',
+      typeof q === 'string' ? q : '',
+    );
     qc.setQueryData(key, next);
   });
 }
@@ -397,7 +411,7 @@ export function usePatchNote() {
       const becomingPrivate =
         patch.encryption !== undefined && patch.encryption !== null;
       const becomingPlaintext = patch.encryption === null;
-      patchAllLists(qc, (list, viewKey) => {
+      patchAllLists(qc, (list, viewKey, q) => {
         const kind = viewKeyToKind(viewKey);
         let next = list.map((n) => {
           if (n.id !== id) return n;
@@ -447,7 +461,7 @@ export function usePatchNote() {
         }
 
         if (patch.pinned !== undefined || patch.title !== undefined) {
-          next = sortList(next);
+          next = resortUnlessSearch(next, q);
         }
         return next;
       });

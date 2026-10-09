@@ -47,7 +47,7 @@ The **Scope** column is which token scope (v1.6, see Authentication above) gets 
 | Tool                   | Scope | Inputs                                                                                          | Result                                            |
 | ---------------------- | ----- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `list_notes`           | read  | `folder?`, `tag?`, `q?`                                                                         | Array of note summaries (id, title, snippet, …). |
-| `search_notes`         | read  | `query`                                                                                         | Same shape as `list_notes`, filtered by FTS (keyword / exact string). |
+| `search_notes`         | read  | `query`                                                                                         | Same shape as `list_notes` plus `matchedBy` (`text` / `meaning` / `both`). Hybrid keyword + meaning ranking — identical to the app's search box and `GET /api/notes?q=`. |
 | `search_semantic`      | read  | `query`, `k?` (default 10, max 50)                                                              | Same shape as `list_notes` plus a `score` field (cosine similarity in [0, 1]). Requires an embedding provider (see [deployment.md](deployment.md)); errors cleanly if unset. |
 | `get_note`             | read  | `id`                                                                                            | Full note **as Markdown** plus metadata.          |
 | `create_note`          | write | `folderId?`, `title?`, `markdown?`, `tagNames?`                                                 | Created note summary.                             |
@@ -76,8 +76,8 @@ All content I/O uses **Markdown**. The server round-trips through `lib/markdown/
 
 ### When should an agent pick `search_semantic` over `search_notes`?
 
-- **`search_notes` (FTS)** — exact strings, filenames, names, short phrases. Fast, zero external dependencies, always available.
-- **`search_semantic`** — conceptual queries ("notes about burnout", "what did I say about pricing", "how did I solve the deploy hang last time"). Only works when the server operator has configured an embedding provider; the tool returns a descriptive error otherwise.
+- **`search_notes` (hybrid)** — the default. Exact strings, filenames and names match by keyword; when the server has an embedding provider, paraphrases match by meaning too, fused into one ranking (see [database.md](database.md#search)). Always available — keyword-only when no provider is configured.
+- **`search_semantic`** — when you want raw cosine-similarity `score`s or more than the fused top results for a purely conceptual query ("notes about burnout", "what did I say about pricing", "how did I solve the deploy hang last time"). Only works when the server operator has configured an embedding provider; the tool returns a descriptive error otherwise.
 
 ---
 

@@ -173,9 +173,9 @@ To enable:
 1. Pick a provider that speaks `POST /v1/embeddings` (OpenAI, Ollama, llama.cpp server, LM Studio, vLLM, …).
 2. Pick a model and note its output dim. `EMBEDDING_DIMS` **must match**, or the column rejects writes.
 3. Set the four env vars, `docker compose up -d`. The migration (`drizzle/0004_embeddings.sql`) enables the `vector` extension and provisions the column on first boot.
-4. Run `npm run db:embed` (locally, against the deployed DB) to backfill existing notes. Fresh writes embed automatically via a lazy in-process worker.
+4. Existing notes are embedded automatically: the in-process worker starts at boot and works through every stale note, then embeds fresh writes as they happen. `npm run db:embed` drains the queue in one go if you'd rather not wait (or run multiple replicas).
 
-Changing `EMBEDDING_DIMS` or swapping to a model with a different dim is a **destructive re-embed**: drop the index + column and re-run the migration. The old vectors are meaningless under a new dim.
+Changing `EMBEDDING_DIMS` or swapping to a model with a different dim is a **destructive re-embed**: drop the column and re-run the migration. The old vectors are meaningless under a new dim. Swapping to a different model with the **same** dim also invalidates them — mark every note stale (`UPDATE notes SET embedding_stale = true WHERE encryption IS NULL`) and run `npm run db:embed`.
 
 ### SMTP / email (optional)
 

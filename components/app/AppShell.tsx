@@ -15,6 +15,7 @@ import { PaneResizer } from './PaneResizer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ActionSheet, type ActionSheetAction } from './ActionSheet';
 import { IconCog, IconLogout, IconMoon, IconSun, IconUsers } from '@/components/icons';
+import { useDebouncedValue } from '@/lib/hooks/use-debounced-value';
 import { useIsMobile } from '@/lib/hooks/use-is-mobile';
 import { useUIStore } from '@/lib/store/ui-store';
 import {
@@ -70,7 +71,10 @@ export function AppShell() {
   const foldersQ = useFolders();
   const tagsQ = useTags();
   const countsQ = useNoteCounts();
-  const notesListQ = useNotesList(view, search);
+  // One list request per 300 ms pause in typing, not per keystroke — each
+  // search request may embed the query (lib/notes/search.ts).
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
+  const notesListQ = useNotesList(view, debouncedSearch);
   const noteQ = useNote(activeNoteId);
 
   const createNote = useCreateNote();

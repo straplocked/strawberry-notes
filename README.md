@@ -43,7 +43,7 @@ The differentiation is **not** "more features than Obsidian" — it's that every
 **The class-leader differentiators:**
 
 - **`[[Wiki-link]]` backlinks** — TipTap autocomplete on `[[`, styled chips, "Linked from N" panel, MCP `get_backlinks` tool. See [docs/technical/editor.md](docs/technical/editor.md).
-- **Semantic search** — pgvector + any OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, vLLM, LM Studio). Ask by meaning. `POST /api/notes/search/semantic` or MCP `search_semantic`.
+- **Hybrid search** — the search box matches by keyword *and* by meaning (pgvector + any OpenAI-compatible embeddings endpoint: OpenAI, Ollama, llama.cpp, vLLM, LM Studio), fused into one ranking. Same results over MCP `search_notes`; raw similarity scores via `search_semantic`.
 - **Full-workspace ZIP export** — one HTTP call returns every note as Markdown + every attachment + a manifest. See `/api/export/all.zip`.
 - **MCP server** — connect Claude Desktop, Cursor, or any MCP-aware client; personal access tokens, SHA-256 at rest, read/write scope (new tokens default to read-only). See [docs/technical/mcp.md](docs/technical/mcp.md).
 - **Web clipper** — MV3 Chrome + Firefox extension in [`extension/`](extension/). See [docs/technical/extension.md](docs/technical/extension.md).
@@ -144,7 +144,7 @@ Scripts:
 - **Database**: Postgres 16 + pgvector 0.8 via [Drizzle ORM](https://orm.drizzle.team). One DB, three query modes (relational / FTS / ANN).
 - **Auth**: [Auth.js v5](https://authjs.dev) credentials provider (bcrypt, JWT session) + personal access tokens (SHA-256) for MCP and the web clipper.
 - **Editor**: [TipTap](https://tiptap.dev) (ProseMirror) with an in-house wiki-link inline-decoration plugin. Notes are stored as ProseMirror JSON with a flattened-text mirror column for search and snippets.
-- **Search**: Postgres `tsvector` + GIN for keyword; pgvector `vector(N)` + IVFFlat for semantic. Optional OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, …).
+- **Search**: hybrid — Postgres `tsvector` + GIN for keyword, pgvector `vector(N)` for meaning, fused in one query with Reciprocal Rank Fusion. Optional OpenAI-compatible embeddings endpoint (OpenAI, Ollama, llama.cpp, …).
 - **Agent interface**: `@modelcontextprotocol/sdk` at `/api/mcp`. Every REST operation reflected as an MCP tool.
 - **File storage**: Local volume at `/data/uploads`, served through an authenticated Next route (ownership checked on every GET). Orphan attachment sweep with a 5-minute grace window.
 - **Offline**: Vanilla service worker at `public/sw.js` using stale-while-revalidate for note/folder/tag GETs. Writes require a network — v1 does not queue offline edits.

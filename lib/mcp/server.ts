@@ -93,7 +93,7 @@ export function buildMcpServer(userId: string, scope: TokenScope = 'write'): Mcp
     'search_notes',
     {
       description:
-        'Full-text (keyword) search over all non-trashed notes. Good for exact strings, names, filenames, and short queries. For conceptual / meaning-based queries (e.g. "notes about burnout", "things I said about pricing"), prefer `search_semantic`. Private Notes are excluded.',
+        'Hybrid search over all non-trashed notes — the same ranking as the app\'s search box. Keyword matches (title and body) are fused with meaning-based matches when the server has an embedding provider configured, so both exact strings and paraphrases work. Each result carries `matchedBy`: "text", "meaning" or "both". Use `search_semantic` when you want raw cosine-similarity scores. Private Notes are excluded.',
       inputSchema: { query: z.string().min(1) },
     },
     async ({ query }) => {
