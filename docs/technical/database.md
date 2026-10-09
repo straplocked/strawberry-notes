@@ -70,9 +70,9 @@ Indexes:
 - `notes_user_folder_idx` on `(userId, folderId, updatedAt)` — folder view.
 - `notes_user_pinned_idx` on `(userId, pinned, updatedAt)` — pinned view.
 - `notes_user_trashed_idx` on `(userId, trashedAt, updatedAt DESC)` — trash view.
-- `notes_content_tsv_idx` — GIN over the `content_tsv` generated tsvector column. See [Full-text search](#full-text-search) below.
+- `notes_content_tsv_idx` — GIN over the `content_tsv` generated tsvector column. See [Search](#search) below.
 - `notes_title_trgm_idx` — GIN over `title` using `gin_trgm_ops` (pg_trgm). Speeds the `[[`-autocomplete ILIKE substring scan into the thousands of notes per user.
-- `notes_content_embedding_idx` — IVFFlat on `content_embedding` with `vector_cosine_ops`. Only populated when the feature is configured.
+- *(no vector index)* — `0005` created an IVFFlat index on `content_embedding`, but it was trained on an empty column; `0016` drops it. Vector queries are an exact scan of one user's rows, which is fast at per-user note counts and returns the true nearest neighbours.
 - `notes_encryption_idx` — partial index on `(encryption IS NOT NULL) WHERE encryption IS NOT NULL`. Backs the bearer-token (MCP / clipper) negative filter; most rows are plaintext so the partial form keeps the index small.
 
 ### `tags`
@@ -234,6 +234,7 @@ Generated into `drizzle/`:
 - `0008_webhooks.sql` — `webhooks` table for v1.4 outbound event delivery.
 - `0009_password_reset.sql` — `password_reset_tokens` table for v1.4 self-service reset.
 - `0010_email_notifications.sql` — `email_confirmations` table, `user_email_preferences` table, `users.email_confirmed_at` column.
+- `0016_drop_ivfflat_index.sql` — drops the untrained IVFFlat index from `0005` (exact per-user vector scans instead).
 
 Workflow:
 
@@ -251,21 +252,28 @@ In production, the Docker entrypoint (`docker/entrypoint.sh`) runs `drizzle-kit 
 
 ---
 
-## Full-Text Search
+## Search
 
-`0001_fts.sql` adds Postgres `tsvector` + `websearch_to_tsquery` support over `notes.title` and `notes.contentText`. The list endpoint (`app/api/notes/route.ts`) uses FTS when a `q` parameter is provided, with an `ILIKE` fallback for very short queries. Results are always scoped to the requesting user and exclude `trashedAt IS NOT NULL` unless the caller explicitly asks for the trash view.
+`GET /api/notes?q=`, the app's search box and MCP `search_notes` all go through `searchNotes()` in `lib/notes/search.ts` (`listNotes` delegates to it whenever `q` is set). It is **hybrid**: one SQL statement fuses two ranked lists with Reciprocal Rank Fusion, `score = Σ 1 / (60 + rank)`.
 
-The 500-item list cap is hardcoded in that route handler — raise it there if needed; Postgres handles far more comfortably.
+- **Text half.** `0001_fts.sql`'s `content_tsv` (title + body) matched with `websearch_to_tsquery`, OR an escaped `title ILIKE`. Ranked by `ts_rank_cd` plus a title boost, capped at 500 rows — every keyword hit up to the cap still appears.
+- **Meaning half.** Only when an embedding provider is configured, the pgvector column exists and the query is ≥ 3 characters: the 10 nearest `content_embedding`s by cosine distance, restricted by `eligibleForAiSql` (plaintext, not trashed — `lib/embeddings/eligible.ts`) and trimmed to hits within 80 % of the best similarity.
+- **Query vector.** 1.5 s timeout, a 100-entry LRU keyed by model + query, and a per-user rate limit (burst 10, 2/s). Any failure silently falls back to text-only ranking — search never errors because the provider is down.
+- **Filters.** Folder / tag / time-range / pinned / trash / bearer `includePrivate: false` come from the same `buildListConditions()` the unfiltered list uses (`lib/notes/service.ts`).
+- **Output.** Rows are ordered by fused score (not by pinned / `updatedAt`) and carry `matchedBy: 'text' | 'meaning' | 'both'`; NoteList marks `meaning`-only rows with `≈`.
+
+With no embedding provider, search is keyword-only but still relevance-ranked. Ranking quality on the labelled demo corpus is checked with `scripts/eval-search.ts` (seed it with `scripts/seed-demo-corpus.ts`).
 
 ---
 
 ## Semantic Search
 
-`0005_embeddings.sql` enables the `vector` extension (from the `pgvector/pgvector:pg16` image) and adds a `content_embedding vector(N)` column plus an IVFFlat cosine index.
+`0005_embeddings.sql` enables the `vector` extension (from the `pgvector/pgvector:pg16` image) and adds a `content_embedding vector(N)` column (its IVFFlat index is dropped again by `0016`).
 
-- **Population path.** `lib/notes/service.ts` sets `embedding_stale = true` on every content or title edit and calls `kickEmbeddingWorker()`. The worker (`lib/embeddings/worker.ts`) pulls up to 16 stale rows with `SELECT … FOR UPDATE SKIP LOCKED`, embeds them via the OpenAI-compatible client, and writes the vectors back.
+- **Population path.** `lib/notes/service.ts` sets `embedding_stale = true` on every content or title edit and calls `kickEmbeddingWorker()`. The worker (`lib/embeddings/worker.ts`) pulls up to 16 stale rows with `SELECT … FOR UPDATE SKIP LOCKED`, embeds them via the OpenAI-compatible client, and writes the vectors back. `instrumentation.ts` kicks it once at boot, so enabling embeddings on an instance with existing notes fills them in without any edits.
+- **Failure handling.** The client sends `dimensions: EMBEDDING_DIMS` (and drops the field for the rest of the process if a provider answers 400). A batch the provider rejects is retried row by row so one bad row can't block the rest; any failure reschedules with doubling backoff (30 s → 15 min cap), reset by the next clean run.
 - **Single-replica supported.** The `SKIP LOCKED` hint is only held for the duration of the SELECT — it releases when the autocommit ends, *before* the embed HTTP call returns. Two replicas running side-by-side can therefore re-embed the same rows; the final UPDATEs converge to identical vectors with `embedding_stale = false`, but you spend `N×` the embedding-API budget. The supported deployment model is **one app replica** running the in-process worker. For multi-replica setups, run `npm run db:embed` out-of-band from a single host instead. The constraint is also called out in [deployment.md](deployment.md#semantic-search-optional) and inline in `lib/embeddings/worker.ts`.
-- **Query path.** `POST /api/notes/search/semantic` and the `search_semantic` MCP tool both call `semanticSearch()` in `lib/embeddings/search.ts`, which embeds the query then runs `ORDER BY content_embedding <=> $vec LIMIT k`, returning a `score = 1 - distance` per row.
+- **Query path.** The search box uses hybrid search ([Search](#search) above). `POST /api/notes/search/semantic` and the `search_semantic` MCP tool both call `semanticSearch()` in `lib/embeddings/search.ts`, which embeds the query then runs `ORDER BY content_embedding <=> $vec LIMIT k`, returning a `score = 1 - distance` per row.
 - **Graceful when unconfigured.** `EMBEDDING_ENDPOINT` empty → worker is a no-op, search returns 503 / `isError: true`. Nothing else is affected.
 - **Backfill.** `npm run db:embed` (wraps `scripts/embed-backfill.ts`) drains every stale row in batches. Safe to run while the app is live.
 

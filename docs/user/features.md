@@ -87,25 +87,23 @@ Link between your notes with `[[Title]]` syntax, just like Obsidian or Logseq �
 
 ## Search
 
-Two modes, both scoped to your notes only.
+The search bar at the top of the middle pane searches every non-trashed note in your current filter (folder, tag, pinned, all), always scoped to your notes only. Results are ranked by relevance — best match first, not newest first.
 
-### Full-text search (keyword)
+### Keyword matches
 
-- The search bar at the top of the middle pane searches titles and body text across every non-trashed note.
-- Uses Postgres full-text search for queries ≥ 3 chars, falls back to substring match for shorter queries.
-- Always scoped to your current filter (folder, tag, pinned, all).
+Titles and body text are matched with Postgres full-text search (word stems, so "baking" finds "bake"), plus a plain substring match on titles. A title match ranks higher.
 
-### Semantic search (meaning)
+### Matches by meaning
 
-When your server administrator has configured an embeddings provider (OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), you can ask questions by meaning instead of keyword:
+When your server administrator has configured an embeddings provider (OpenAI, Ollama, llama.cpp, or any OpenAI-compatible endpoint), the same search box also finds notes by meaning, even when none of your words appear in them:
 
-- "what did I decide about pricing last quarter"
+- "why does my bread come out flat" finds your sourdough troubleshooting notes
 - "notes about burnout"
 - "how did I solve the deploy hang last time"
 
-Results come back ranked by semantic similarity, with a score. This is especially useful when you can remember the *topic* but not the exact words you wrote.
+Keyword and meaning matches are blended into one list. A note found **only** by meaning shows a small **≈** before its title. This is especially useful when you remember the *topic* but not the exact words you wrote.
 
-If your server hasn't configured semantic search, the feature returns a clear "not configured" message and full-text search still works.
+Private notes are never matched by meaning — they are never sent to the embeddings provider. If your server hasn't configured embeddings, or the provider is slow or down, search quietly falls back to keyword matches.
 
 ---
 

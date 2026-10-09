@@ -1,0 +1,13 @@
+-- Drop the IVFFlat index on `notes.content_embedding` (Vikunja 712, task 06).
+--
+-- 0005 built it against an empty column, so its clusters were trained on no
+-- data: an approximate index with untrained lists returns poor or missing
+-- neighbours, and every vector query also carries the user / eligibility
+-- filters, which IVFFlat applies only after its probe. Per-user note counts
+-- are small (thousands), so an exact scan of the user's rows is fast and
+-- returns the true nearest neighbours — which hybrid search (lib/notes/search.ts)
+-- and related notes depend on.
+--
+-- IF EXISTS: the index (and the column) only exist when pgvector was
+-- available at migration time — see drizzle/0005_embeddings.sql.
+DROP INDEX IF EXISTS "notes_content_embedding_idx";

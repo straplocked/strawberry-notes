@@ -62,6 +62,13 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 11,
     lineHeight: 1,
   },
+  meaningMark: {
+    color: 'var(--ink-4)',
+    display: 'inline-flex',
+    fontSize: 12,
+    lineHeight: 1,
+    cursor: 'help',
+  },
   privateSnippet: {
     fontStyle: 'italic',
     color: 'var(--ink-4)',
@@ -294,6 +301,15 @@ function NoteListImpl({
                     {n.private && (
                       <span style={styles.lockMark} title="Private note (encrypted)">
                         🔒
+                      </span>
+                    )}
+                    {n.matchedBy === 'meaning' && (
+                      <span
+                        style={styles.meaningMark}
+                        title="Matched by meaning — no exact keyword match"
+                        aria-label="Matched by meaning"
+                      >
+                        ≈
                       </span>
                     )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>

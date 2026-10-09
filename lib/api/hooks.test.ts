@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { injectOptimisticTags } from './hooks';
-import type { TagDTO } from '../types';
+import { injectOptimisticTags, resortUnlessSearch } from './hooks';
+import type { NoteListItemDTO, TagDTO } from '../types';
 
 const seed: TagDTO[] = [
   { id: 't-recipes', name: 'recipes', count: 4 },
@@ -51,5 +51,35 @@ describe('injectOptimisticTags', () => {
   it('handles the empty-cache case (fresh user)', () => {
     const out = injectOptimisticTags([], ['first']);
     expect(out).toEqual([{ id: 'tmp-tag-first', name: 'first', count: 1 }]);
+  });
+});
+
+describe('resortUnlessSearch', () => {
+  const item = (id: string, updatedAt: string, pinned = false): NoteListItemDTO => ({
+    id,
+    folderId: null,
+    title: id,
+    snippet: '',
+    pinned,
+    updatedAt,
+    tagIds: [],
+    hasImage: false,
+    private: false,
+  });
+  // Relevance order from the server: the best match was edited longest ago,
+  // and the note just patched (c) now has the newest updatedAt.
+  const ranked = [
+    item('a', '2026-01-01T00:00:00Z'),
+    item('b', '2026-02-01T00:00:00Z'),
+    item('c', '2026-10-09T00:00:00Z'),
+  ];
+
+  it('keeps relevance order for a search list', () => {
+    expect(resortUnlessSearch(ranked, 'sourdough').map((n) => n.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('re-sorts a plain list by pinned, then updatedAt', () => {
+    const list = [...ranked, item('p', '2025-01-01T00:00:00Z', true)];
+    expect(resortUnlessSearch(list, '').map((n) => n.id)).toEqual(['p', 'c', 'b', 'a']);
   });
 });

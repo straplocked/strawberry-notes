@@ -28,7 +28,13 @@ vi.mock('./client', async () => {
   };
 });
 
-import { runOnce, __resetWorkerForTests } from './worker';
+import {
+  errorBackoffMs,
+  getEmbeddingWorkerStatus,
+  kickEmbeddingWorker,
+  runOnce,
+  __resetWorkerForTests,
+} from './worker';
 import { __setEmbeddingAvailableForTests } from './availability';
 
 beforeEach(() => {
@@ -119,5 +125,82 @@ describe('runOnce', () => {
     // Let the first one finish.
     resolveSelect({ rows: [] });
     await first;
+  });
+});
+
+describe('failure handling', () => {
+  const rows = [
+    { id: 'id-a', title: 'A', content_text: 'alpha' },
+    { id: 'id-b', title: 'B', content_text: 'bad' },
+    { id: 'id-c', title: 'C', content_text: 'gamma' },
+  ];
+
+  it('retries a failed batch row by row so one bad row does not block the rest', async () => {
+    executeMock.mockResolvedValueOnce({ rows });
+    executeMock.mockResolvedValue({ rows: [] });
+    embedBatchMock.mockImplementation(async (inputs: string[]) => {
+      if (inputs.length > 1) throw new Error('batch rejected');
+      if (inputs[0].includes('bad')) throw new Error('input rejected');
+      return [[0.1, 0.2, 0.3]];
+    });
+
+    const processed = await runOnce();
+    expect(processed).toBe(2);
+    // 1 batch call + 3 single-row retries.
+    expect(embedBatchMock).toHaveBeenCalledTimes(4);
+    // 1 SELECT + 2 UPDATEs (the bad row stays stale).
+    expect(executeMock).toHaveBeenCalledTimes(3);
+    expect(getEmbeddingWorkerStatus().lastError).toBe('input rejected');
+  });
+
+  it('throws when no row in the batch could be embedded', async () => {
+    executeMock.mockResolvedValueOnce({ rows });
+    embedBatchMock.mockRejectedValue(new Error('provider down'));
+    await expect(runOnce()).rejects.toThrow('provider down');
+    // Only the SELECT ran — nothing was written.
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs off with doubling delays capped at 15 minutes', () => {
+    expect(errorBackoffMs(1)).toBe(30_000);
+    expect(errorBackoffMs(2)).toBe(60_000);
+    expect(errorBackoffMs(3)).toBe(120_000);
+    expect(errorBackoffMs(6)).toBe(15 * 60_000);
+    expect(errorBackoffMs(50)).toBe(15 * 60_000);
+  });
+
+  it('reschedules after an error and resets the backoff on the next clean run', async () => {
+    vi.useFakeTimers();
+    try {
+      // Run 1: provider down.
+      executeMock.mockResolvedValueOnce({ rows: rows.slice(0, 1) });
+      embedBatchMock.mockRejectedValueOnce(new Error('provider down'));
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      kickEmbeddingWorker(0);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getEmbeddingWorkerStatus()).toMatchObject({
+        consecutiveFailures: 1,
+        lastError: 'provider down',
+      });
+
+      // A write-triggered kick during the backoff coalesces — no new run.
+      kickEmbeddingWorker(0);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(embedBatchMock).toHaveBeenCalledTimes(1);
+
+      // Run 2 fires after the 30 s backoff and succeeds.
+      executeMock.mockResolvedValueOnce({ rows: rows.slice(0, 1) });
+      executeMock.mockResolvedValue({ rows: [] });
+      embedBatchMock.mockResolvedValueOnce([[0.1, 0.2, 0.3]]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(embedBatchMock).toHaveBeenCalledTimes(2);
+      expect(getEmbeddingWorkerStatus().consecutiveFailures).toBe(0);
+      expect(getEmbeddingWorkerStatus().lastSuccessAt).not.toBeNull();
+      errSpy.mockRestore();
+    } finally {
+      __resetWorkerForTests();
+      vi.useRealTimers();
+    }
   });
 });

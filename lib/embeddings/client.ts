@@ -6,8 +6,12 @@
  * server, LM Studio, vLLM, etc. The whole point of leaning on the shape
  * rather than an SDK is self-hosters keep control of where their text goes.
  *
- * The client is deliberately tiny — no retries, no streaming, no SDK — so
- * that it stays legible and the non-bloat line holds.
+ * The client is deliberately tiny — no streaming, no SDK — so that it stays
+ * legible and the non-bloat line holds. Its one retry is protocol, not
+ * resilience: it sends `dimensions` (so models like OpenAI's
+ * text-embedding-3-* return EMBEDDING_DIMS-wide vectors instead of their
+ * native 1536), and if a provider rejects that field with a 400 it retries
+ * once without it and stops sending it for the rest of the process.
  *
  * Env (all optional; feature silently disabled if `EMBEDDING_ENDPOINT` is
  * empty):
@@ -72,6 +76,13 @@ export function isEmbeddingConfigured(): boolean {
  * Low-level: call `POST {endpoint}/embeddings` with an array of inputs and
  * return the vectors in the same order. Throws on HTTP errors.
  */
+/**
+ * Providers that rejected the `dimensions` field (keyed by endpoint + model).
+ * Process-lifetime memory so a provider that doesn't support it costs one
+ * extra round trip per boot, not one per call.
+ */
+const noDimensionsField = new Set<string>();
+
 async function callEmbeddings(
   cfg: EmbeddingConfig,
   inputs: string[],
@@ -81,11 +92,23 @@ async function callEmbeddings(
   const url = `${cfg.endpoint}/embeddings`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-  const res = await fetchFn(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model: cfg.model, input: inputs }),
-  });
+  const providerKey = `${cfg.endpoint}\u0000${cfg.model}`;
+  const post = (withDims: boolean) =>
+    fetchFn(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(
+        withDims
+          ? { model: cfg.model, input: inputs, dimensions: cfg.dims }
+          : { model: cfg.model, input: inputs },
+      ),
+    });
+  const sendDims = !noDimensionsField.has(providerKey);
+  let res = await post(sendDims);
+  if (res.status === 400 && sendDims) {
+    noDimensionsField.add(providerKey);
+    res = await post(false);
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(
@@ -145,4 +168,9 @@ export function embeddingInputFor(title: string, contentText: string, maxChars =
   const combined = head ? `${head}\n\n${body}` : body;
   if (combined.length <= maxChars) return combined;
   return combined.slice(0, maxChars);
+}
+
+/** Forget which providers rejected `dimensions`. Tests only. */
+export function __resetEmbeddingClientForTests() {
+  noDimensionsField.clear();
 }
